@@ -268,6 +268,8 @@ export default function MapView() {
           phone: p.phone,
           submitted_by: p.submitted_by,
           last_updated: p.last_updated,
+          serves_beer: p.serves_beer ?? null,
+          amenity_type: p.amenity_type ?? null,
         });
         setShowPriceForm(false);
         setShowAddForm(false);
