@@ -9,6 +9,15 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { supabase, type Bar } from '@/lib/supabase';
 
+function getDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.asin(Math.sqrt(a));
+}
+
 // Returns a color based on the beer price
 function getPriceColor(price: number): string {
   if (price === 0) return '#9CA3AF'; // grey  = unknown
@@ -37,6 +46,9 @@ export default function MapView() {
   const [searchQuery, setSearchQuery] = useState('');
   const [priceFilter, setPriceFilter] = useState<'all' | 'under5' | 'under8' | 'known'>('all');
   const [searchOpen, setSearchOpen] = useState(false);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [suggestion, setSuggestion] = useState<(Bar & { distance: number }) | null>(null);
+  const [suggestionDismissed, setSuggestionDismissed] = useState(false);
 
   // Bars filtered by search query and price filter
   const filteredBars = useMemo(() => {
@@ -366,6 +378,26 @@ export default function MapView() {
     setLoading(false);
   }
 
+  // --- Get user GPS position once ---
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      pos => setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => {} // silently ignore if denied
+    );
+  }, []);
+
+  // --- Compute suggestion: cheapest bar with known price within 500m ---
+  useEffect(() => {
+    if (!userLocation || bars.length === 0 || suggestionDismissed) return;
+    const best = bars
+      .filter(b => b.beer_price > 0)
+      .map(b => ({ ...b, distance: getDistanceMeters(userLocation.lat, userLocation.lng, b.latitude, b.longitude) }))
+      .filter(b => b.distance <= 500)
+      .sort((a, b) => a.beer_price - b.beer_price)[0] ?? null;
+    setSuggestion(best);
+  }, [userLocation, bars, suggestionDismissed]);
+
   function closeAll() {
     setSelectedBar(null);
     setShowPriceForm(false);
@@ -524,6 +556,46 @@ export default function MapView() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Nearby suggestion card — cheapest bar within 500m */}
+      {suggestion && !suggestionDismissed && !selectedBar && !showAddForm && (
+        <div className="absolute bottom-48 left-4 right-4 z-10 bg-white rounded-2xl shadow-xl overflow-hidden">
+          {/* Green accent bar at top */}
+          <div className="h-1 bg-green-500 w-full" />
+          <div className="px-4 py-3">
+            <p className="text-xs font-semibold text-green-600 uppercase tracking-wide mb-1">
+              La moins chère à {Math.round(suggestion.distance)} m
+            </p>
+            <div className="flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-gray-900 truncate text-base">{suggestion.name}</p>
+                {suggestion.address && (
+                  <p className="text-xs text-gray-400 truncate">{suggestion.address}</p>
+                )}
+              </div>
+              <span className="text-2xl font-extrabold text-green-600 flex-shrink-0">
+                {suggestion.beer_price.toFixed(2)}€
+              </span>
+            </div>
+            <div className="flex gap-2 mt-3">
+              <a
+                href={`https://www.google.com/maps/dir/?api=1&destination=${suggestion.latitude},${suggestion.longitude}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl py-2.5 text-center transition"
+              >
+                Y aller →
+              </a>
+              <button
+                onClick={() => setSuggestionDismissed(true)}
+                className="px-4 py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-medium hover:bg-gray-200 transition"
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
