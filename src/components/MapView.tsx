@@ -36,11 +36,30 @@ export default function MapView() {
   const [message, setMessage] = useState('');
 
   // --- Load all bars from Supabase on first render ---
+  // Supabase returns max 1000 rows per request, so we fetch in batches
   useEffect(() => {
     async function loadBars() {
-      const { data, error } = await supabase.from('bars').select('*');
-      if (data) setBars(data as Bar[]);
-      if (error) console.error('Error loading bars:', error);
+      const batchSize = 1000;
+      let allBars: Bar[] = [];
+      let from = 0;
+      let keepGoing = true;
+
+      while (keepGoing) {
+        const { data, error } = await supabase
+          .from('bars')
+          .select('*')
+          .range(from, from + batchSize - 1);
+
+        if (error) { console.error('Error loading bars:', error); break; }
+        if (!data || data.length === 0) break;
+
+        allBars = [...allBars, ...(data as Bar[])];
+        from += batchSize;
+        // If we got fewer rows than requested, we've reached the end
+        if (data.length < batchSize) keepGoing = false;
+      }
+
+      setBars(allBars);
     }
     loadBars();
   }, []);
