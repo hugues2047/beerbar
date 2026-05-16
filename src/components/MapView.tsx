@@ -36,29 +36,28 @@ export default function MapView() {
   const [message, setMessage] = useState('');
 
   // --- Load all bars from Supabase on first render ---
-  // Supabase returns max 1000 rows per request, so we fetch in batches
+  // We first get the total count, then fire all batch requests in parallel
   useEffect(() => {
     async function loadBars() {
+      // Step 1: get total row count
+      const { count } = await supabase
+        .from('bars')
+        .select('*', { count: 'exact', head: true });
+
+      if (!count) return;
+
+      // Step 2: fire all batch requests at the same time (parallel, not sequential)
       const batchSize = 1000;
-      let allBars: Bar[] = [];
-      let from = 0;
-      let keepGoing = true;
-
-      while (keepGoing) {
-        const { data, error } = await supabase
+      const numBatches = Math.ceil(count / batchSize);
+      const requests = Array.from({ length: numBatches }, (_, i) =>
+        supabase
           .from('bars')
-          .select('*')
-          .range(from, from + batchSize - 1);
+          .select('id,name,address,latitude,longitude,beer_price,phone,last_updated')
+          .range(i * batchSize, (i + 1) * batchSize - 1)
+      );
 
-        if (error) { console.error('Error loading bars:', error); break; }
-        if (!data || data.length === 0) break;
-
-        allBars = [...allBars, ...(data as Bar[])];
-        from += batchSize;
-        // If we got fewer rows than requested, we've reached the end
-        if (data.length < batchSize) keepGoing = false;
-      }
-
+      const results = await Promise.all(requests);
+      const allBars = results.flatMap(r => r.data || []) as Bar[];
       setBars(allBars);
     }
     loadBars();
@@ -128,14 +127,50 @@ export default function MapView() {
         return;
       }
 
-      // Register the GeoJSON data source
-      map.current!.addSource('bars', { type: 'geojson', data: geojson });
+      // Register the GeoJSON source with clustering enabled
+      // Clustering groups nearby pins together when zoomed out
+      map.current!.addSource('bars', {
+        type: 'geojson',
+        data: geojson,
+        cluster: true,
+        clusterMaxZoom: 14, // stop clustering when zoomed in past level 14
+        clusterRadius: 40,  // how close points need to be to cluster (pixels)
+      });
 
-      // White ring behind each dot (makes them easier to see on the map)
+      // Cluster bubble (the circle showing grouped bars)
+      map.current!.addLayer({
+        id: 'clusters',
+        type: 'circle',
+        source: 'bars',
+        filter: ['has', 'point_count'], // only show when it's a cluster
+        paint: {
+          'circle-color': '#3B82F6',
+          // Bigger bubble = more bars inside
+          'circle-radius': ['step', ['get', 'point_count'], 16, 20, 22, 100, 28],
+          'circle-opacity': 0.85,
+        },
+      });
+
+      // Number inside the cluster bubble
+      map.current!.addLayer({
+        id: 'cluster-count',
+        type: 'symbol',
+        source: 'bars',
+        filter: ['has', 'point_count'],
+        layout: {
+          'text-field': '{point_count_abbreviated}',
+          'text-size': 12,
+          'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+        },
+        paint: { 'text-color': '#ffffff' },
+      });
+
+      // White ring behind individual dots
       map.current!.addLayer({
         id: 'bars-outline',
         type: 'circle',
         source: 'bars',
+        filter: ['!', ['has', 'point_count']], // only individual bars (not clusters)
         paint: {
           'circle-radius': 9,
           'circle-color': '#ffffff',
@@ -148,6 +183,7 @@ export default function MapView() {
         id: 'bars-circle',
         type: 'circle',
         source: 'bars',
+        filter: ['!', ['has', 'point_count']],
         paint: {
           'circle-radius': 7,
           'circle-color': [
@@ -158,6 +194,18 @@ export default function MapView() {
             '#EF4444',                                    // red
           ],
         },
+      });
+
+      // Clicking a cluster zooms in to expand it
+      map.current!.on('click', 'clusters', (e) => {
+        if (!e.features?.[0]) return;
+        const clusterId = e.features[0].properties!.cluster_id;
+        (map.current!.getSource('bars') as mapboxgl.GeoJSONSource)
+          .getClusterExpansionZoom(clusterId, (err, zoom) => {
+            if (err || !e.features?.[0].geometry) return;
+            const coords = (e.features[0].geometry as GeoJSON.Point).coordinates as [number, number];
+            map.current!.easeTo({ center: coords, zoom: zoom! });
+          });
       });
 
       // Clicking a dot opens the bar info panel
@@ -181,12 +229,14 @@ export default function MapView() {
         setMessage('');
       });
 
-      // Change cursor to pointer when hovering a dot
-      map.current!.on('mouseenter', 'bars-circle', () => {
-        map.current!.getCanvas().style.cursor = 'pointer';
-      });
-      map.current!.on('mouseleave', 'bars-circle', () => {
-        map.current!.getCanvas().style.cursor = '';
+      // Pointer cursor on hover
+      ['bars-circle', 'clusters'].forEach(layer => {
+        map.current!.on('mouseenter', layer, () => {
+          map.current!.getCanvas().style.cursor = 'pointer';
+        });
+        map.current!.on('mouseleave', layer, () => {
+          map.current!.getCanvas().style.cursor = '';
+        });
       });
     }
 
