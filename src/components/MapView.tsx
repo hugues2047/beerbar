@@ -49,6 +49,11 @@ export default function MapView() {
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [suggestion, setSuggestion] = useState<(Bar & { distance: number }) | null>(null);
   const [suggestionDismissed, setSuggestionDismissed] = useState(false);
+  const [mapApp, setMapApp] = useState<'google' | 'apple' | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return (localStorage.getItem('mapApp') as 'google' | 'apple') ?? null;
+  });
+  const [pendingDest, setPendingDest] = useState<{ lat: number; lng: number } | null>(null);
 
   // Bars filtered by search query and price filter
   const filteredBars = useMemo(() => {
@@ -398,6 +403,28 @@ export default function MapView() {
     setSuggestion(best);
   }, [userLocation, bars, suggestionDismissed]);
 
+  function openNav(lat: number, lng: number, app: 'google' | 'apple') {
+    const url = app === 'apple'
+      ? `http://maps.apple.com/?daddr=${lat},${lng}`
+      : `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+    window.open(url, '_blank');
+  }
+
+  function handleNavTap(lat: number, lng: number) {
+    if (mapApp) {
+      openNav(lat, lng, mapApp);
+    } else {
+      setPendingDest({ lat, lng });
+    }
+  }
+
+  function pickMapApp(app: 'google' | 'apple') {
+    localStorage.setItem('mapApp', app);
+    setMapApp(app);
+    if (pendingDest) openNav(pendingDest.lat, pendingDest.lng, app);
+    setPendingDest(null);
+  }
+
   function closeAll() {
     setSelectedBar(null);
     setShowPriceForm(false);
@@ -580,14 +607,12 @@ export default function MapView() {
               </span>
             </div>
             <div className="flex gap-2 mt-3">
-              <a
-                href={`https://www.google.com/maps/dir/?api=1&destination=${suggestion.latitude},${suggestion.longitude}`}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                onClick={() => handleNavTap(suggestion.latitude, suggestion.longitude)}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl py-2.5 text-center transition"
               >
                 Y aller →
-              </a>
+              </button>
               <button
                 onClick={() => setSuggestionDismissed(true)}
                 className="px-4 py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-medium hover:bg-gray-200 transition"
@@ -643,6 +668,38 @@ export default function MapView() {
             >
               {loading ? 'Géolocalisation en cours...' : 'Ajouter ce bar'}
             </button>
+          </div>
+        </div>
+      )}
+      {/* Map app picker — shown once, choice saved to localStorage */}
+      {pendingDest && (
+        <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/40" onClick={() => setPendingDest(null)}>
+          <div className="bg-white w-full max-w-lg rounded-t-3xl px-5 pt-5 pb-10" onClick={e => e.stopPropagation()}>
+            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
+            <h2 className="text-lg font-bold text-gray-900 text-center mb-1">Ouvrir avec…</h2>
+            <p className="text-sm text-gray-400 text-center mb-6">Ton choix sera mémorisé</p>
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => pickMapApp('apple')}
+                className="flex items-center gap-4 w-full bg-gray-50 hover:bg-gray-100 rounded-2xl px-5 py-4 transition"
+              >
+                <span className="text-3xl">🗺️</span>
+                <div className="text-left">
+                  <p className="font-semibold text-gray-900">Plans</p>
+                  <p className="text-xs text-gray-400">Apple Maps</p>
+                </div>
+              </button>
+              <button
+                onClick={() => pickMapApp('google')}
+                className="flex items-center gap-4 w-full bg-gray-50 hover:bg-gray-100 rounded-2xl px-5 py-4 transition"
+              >
+                <span className="text-3xl">📍</span>
+                <div className="text-left">
+                  <p className="font-semibold text-gray-900">Google Maps</p>
+                  <p className="text-xs text-gray-400">google.com/maps</p>
+                </div>
+              </button>
+            </div>
           </div>
         </div>
       )}
