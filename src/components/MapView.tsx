@@ -4,7 +4,7 @@
 // It renders the Mapbox map, loads bars from Supabase,
 // shows colored pins, and handles popups + forms.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { supabase, type Bar } from '@/lib/supabase';
@@ -34,6 +34,22 @@ export default function MapView() {
   const [newBar, setNewBar] = useState({ name: '', address: '', price: '' });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [priceFilter, setPriceFilter] = useState<'all' | 'under5' | 'under8' | 'known'>('all');
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // Bars filtered by search query and price filter
+  const filteredBars = useMemo(() => {
+    return bars.filter(bar => {
+      // Search filter — match on bar name
+      if (searchQuery && !bar.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      // Price filters — only applies to bars with a known price
+      if (priceFilter === 'under5') return bar.beer_price > 0 && bar.beer_price < 5;
+      if (priceFilter === 'under8') return bar.beer_price > 0 && bar.beer_price <= 8;
+      if (priceFilter === 'known')  return bar.beer_price > 0;
+      return true;
+    });
+  }, [bars, searchQuery, priceFilter]);
 
   // --- Load all bars from Supabase on first render ---
   // We first get the total count, then fire all batch requests in parallel
@@ -103,6 +119,20 @@ export default function MapView() {
     });
   }, []);
 
+  // --- Update map source when filters change ---
+  useEffect(() => {
+    if (!map.current || !map.current.getSource('bars')) return;
+    const geojson: GeoJSON.FeatureCollection = {
+      type: 'FeatureCollection',
+      features: filteredBars.map(bar => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [bar.longitude, bar.latitude] },
+        properties: { ...bar },
+      })),
+    };
+    (map.current.getSource('bars') as mapboxgl.GeoJSONSource).setData(geojson);
+  }, [filteredBars]);
+
   // --- Add bars as colored dots on the map ---
   useEffect(() => {
     if (!map.current || bars.length === 0) return;
@@ -111,7 +141,7 @@ export default function MapView() {
       // Convert bars array to GeoJSON format (what Mapbox expects)
       const geojson: GeoJSON.FeatureCollection = {
         type: 'FeatureCollection',
-        features: bars.map(bar => ({
+        features: filteredBars.map(bar => ({
           type: 'Feature',
           geometry: {
             type: 'Point',
@@ -121,11 +151,8 @@ export default function MapView() {
         })),
       };
 
-      // If source already exists (e.g. after a price update), just refresh the data
-      if (map.current!.getSource('bars')) {
-        (map.current!.getSource('bars') as mapboxgl.GeoJSONSource).setData(geojson);
-        return;
-      }
+      // If source already exists, skip (the filter effect handles updates)
+      if (map.current!.getSource('bars')) return;
 
       // Register the GeoJSON source with clustering enabled
       // Clustering groups nearby pins together when zoomed out
@@ -351,17 +378,68 @@ export default function MapView() {
       {/* The map — takes up the full screen */}
       <div ref={mapContainer} className="absolute inset-0" style={{ width: '100%', height: '100%' }} />
 
-      {/* Top-left button: add a new bar */}
+      {/* Top bar: search + price filters */}
+      <div className="absolute top-3 left-3 right-14 z-10 flex flex-col gap-2">
+
+        {/* Search bar */}
+        <div className="flex items-center gap-2 bg-white rounded-2xl shadow-lg px-3 py-2">
+          <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+          </svg>
+          <input
+            type="text"
+            placeholder="Rechercher un bar..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="flex-1 text-sm text-gray-900 placeholder-gray-400 focus:outline-none bg-transparent"
+          />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery('')} className="text-gray-300 hover:text-gray-500 text-lg leading-none">✕</button>
+          )}
+        </div>
+
+        {/* Price filter chips */}
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+          {[
+            { key: 'all',    label: 'Tous' },
+            { key: 'under5', label: '< 5€' },
+            { key: 'under8', label: '< 8€' },
+            { key: 'known',  label: 'Prix connu' },
+          ].map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setPriceFilter(key as typeof priceFilter)}
+              className={`flex-shrink-0 text-sm font-medium px-3 py-1.5 rounded-full shadow transition ${
+                priceFilter === key
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Add bar button — floating bottom right */}
       <button
         onClick={() => { closeAll(); setShowAddForm(true); }}
-        className="absolute top-4 left-4 z-10 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm px-4 py-2 rounded-full shadow-lg transition"
+        className="absolute bottom-36 right-4 z-10 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xl w-14 h-14 rounded-full shadow-xl transition flex items-center justify-center"
+        title="Ajouter un bar"
       >
-        + Ajouter un bar
+        +
       </button>
 
-      {/* Bottom-left: price legend */}
+      {/* Bottom-left: legend + result count */}
       <div className="absolute bottom-8 left-4 z-10 bg-white rounded-2xl shadow-lg px-4 py-3 text-sm space-y-1.5">
-        <p className="font-semibold text-gray-700 text-xs uppercase tracking-wide mb-2">Prix d'une bière</p>
+        <p className="font-semibold text-gray-700 text-xs uppercase tracking-wide mb-2">
+          Prix d'une bière
+          {(searchQuery || priceFilter !== 'all') && (
+            <span className="ml-2 font-normal text-blue-500 normal-case">
+              · {filteredBars.length} résultats
+            </span>
+          )}
+        </p>
         {[
           { color: 'bg-green-500',  label: 'Moins de 5 €' },
           { color: 'bg-orange-500', label: '5 € – 8 €' },
