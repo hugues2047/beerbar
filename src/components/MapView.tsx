@@ -256,18 +256,20 @@ export default function MapView() {
       return;
     }
     setLoading(true);
+    const updatedAt = new Date().toISOString();
     const { error } = await supabase
       .from('bars')
-      .update({ beer_price: price, last_updated: new Date().toISOString() })
+      .update({ beer_price: price, last_updated: updatedAt })
       .eq('id', selectedBar.id);
 
     if (error) {
       setMessage("Erreur lors de la soumission.");
     } else {
       setMessage("Prix soumis, merci !");
-      // Refresh map data
-      const { data } = await supabase.from('bars').select('*');
-      if (data) setBars(data as Bar[]);
+      // Update only the modified bar in local state — no need to reload everything
+      setBars(prev => prev.map(b =>
+        b.id === selectedBar.id ? { ...b, beer_price: price, last_updated: updatedAt } : b
+      ));
       setTimeout(() => {
         setSelectedBar(null);
         setShowPriceForm(false);
@@ -318,8 +320,14 @@ export default function MapView() {
       setMessage("Erreur lors de l'ajout.");
     } else {
       setMessage("Bar ajouté, merci !");
-      const { data } = await supabase.from('bars').select('*');
-      if (data) setBars(data as Bar[]);
+      // Fetch just the newly inserted bar and add it to local state
+      const { data: inserted } = await supabase
+        .from('bars')
+        .select('id,name,address,latitude,longitude,beer_price,phone,last_updated')
+        .eq('name', newBar.name)
+        .eq('latitude', latitude)
+        .limit(1);
+      if (inserted?.[0]) setBars(prev => [...prev, inserted[0] as Bar]);
       setTimeout(() => {
         setShowAddForm(false);
         setNewBar({ name: '', address: '', price: '' });
