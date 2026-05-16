@@ -55,10 +55,11 @@ export default function MapView() {
   // We first get the total count, then fire all batch requests in parallel
   useEffect(() => {
     async function loadBars() {
-      // Step 1: get total row count
+      // Step 1: get total row count — exclude places flagged as no-beer
       const { count } = await supabase
         .from('bars')
-        .select('*', { count: 'exact', head: true });
+        .select('*', { count: 'exact', head: true })
+        .or('serves_beer.eq.true,serves_beer.is.null');
 
       if (!count) return;
 
@@ -69,6 +70,7 @@ export default function MapView() {
         supabase
           .from('bars')
           .select('id,name,address,latitude,longitude,beer_price,phone,last_updated')
+          .or('serves_beer.eq.true,serves_beer.is.null')
           .range(i * batchSize, (i + 1) * batchSize - 1)
       );
 

@@ -18,4 +18,6 @@ export type Bar = {
   phone: string | null;
   submitted_by: string | null;
   last_updated: string;
+  serves_beer: boolean | null;
+  amenity_type: string | null;
 };
