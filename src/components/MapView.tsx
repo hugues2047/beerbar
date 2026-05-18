@@ -255,6 +255,12 @@ export default function MapView() {
         map.current!.on('mouseenter', layer, () => { map.current!.getCanvas().style.cursor = 'pointer'; });
         map.current!.on('mouseleave', layer, () => { map.current!.getCanvas().style.cursor = ''; });
       });
+
+      // Click on empty map space → dismiss suggestion card
+      map.current!.on('click', e => {
+        const hit = map.current!.queryRenderedFeatures(e.point, { layers: ['bars-circle', 'clusters'] });
+        if (hit.length === 0) setSuggestionDismissed(true);
+      });
     }
 
     if (map.current.isStyleLoaded()) addBarsToMap();
