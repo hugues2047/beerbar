@@ -450,11 +450,6 @@ export default function MapView() {
               {label}
             </button>
           ))}
-          {isFiltered && (
-            <span className="flex-shrink-0 text-sm text-blue-500 font-medium px-1 py-1.5 self-center whitespace-nowrap">
-              {filteredBars.length} bars
-            </span>
-          )}
         </div>
       </div>
 
@@ -544,6 +539,17 @@ export default function MapView() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Reopen suggestion bubble — shown when dismissed and a suggestion exists */}
+      {suggestion && suggestionDismissed && !selectedBar && !showAddForm && !routeInfo && (
+        <button
+          onClick={() => setSuggestionDismissed(false)}
+          className="absolute bottom-28 right-4 z-10 bg-white shadow-lg rounded-full px-3 py-2 flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition"
+        >
+          <span>🍺</span>
+          <span className="text-green-600 font-bold">{suggestion.beer_price.toFixed(2)}€</span>
+        </button>
       )}
 
       {/* In-app route info — compact floating card */}
