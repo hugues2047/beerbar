@@ -26,7 +26,7 @@ function formatPrice(price: number): string {
   return `${price.toFixed(2)} €`;
 }
 
-type SuggestionPriceMax = 5 | 8 | null;
+type SuggestionPriceMax = 4 | 5 | null;
 
 type RouteInfo = {
   minutes: number;
@@ -54,15 +54,15 @@ export default function MapView() {
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [suggestion, setSuggestion] = useState<(Bar & { distance: number }) | null>(null);
   const [suggestionDismissed, setSuggestionDismissed] = useState(false);
-  const [suggestionPriceMax, setSuggestionPriceMax] = useState<SuggestionPriceMax>(5);
+  const [suggestionPriceMax, setSuggestionPriceMax] = useState<SuggestionPriceMax>(4);
 
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
 
   const filteredBars = useMemo(() => {
     return bars.filter(bar => {
       if (searchQuery && !bar.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-      if (priceFilter === 'under5') return bar.beer_price > 0 && bar.beer_price < 5;
-      if (priceFilter === 'under8') return bar.beer_price > 0 && bar.beer_price <= 8;
+      if (priceFilter === 'under5') return bar.beer_price > 0 && bar.beer_price < 4;
+      if (priceFilter === 'under8') return bar.beer_price > 0 && bar.beer_price <= 5;
       if (priceFilter === 'known')  return bar.beer_price > 0;
       return true;
     });
@@ -415,8 +415,8 @@ export default function MapView() {
         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
           {([
             { key: 'all',    label: 'Tous' },
-            { key: 'under5', label: '< 5€' },
-            { key: 'under8', label: '< 8€' },
+            { key: 'under5', label: '< 4€' },
+            { key: 'under8', label: '< 5€' },
             { key: 'known',  label: 'Prix connu' },
           ] as const).map(({ key, label }) => (
             <button
@@ -481,7 +481,7 @@ export default function MapView() {
 
             {/* Price threshold chips */}
             <div className="flex gap-1.5 mb-3">
-              {([5, 8, null] as SuggestionPriceMax[]).map(val => (
+              {([4, 5, null] as SuggestionPriceMax[]).map(val => (
                 <button
                   key={String(val)}
                   onClick={() => { setSuggestionPriceMax(val); setSuggestionDismissed(false); }}
@@ -514,35 +514,34 @@ export default function MapView() {
         </div>
       )}
 
-      {/* In-app route info bar */}
+      {/* In-app route info — compact floating card */}
       {routeInfo && (
-        <div className="absolute bottom-0 left-0 right-0 z-20 bg-white rounded-t-3xl shadow-2xl px-5 pt-5 pb-8 max-w-lg mx-auto">
-          <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
-          <div className="flex items-start justify-between mb-4">
-            <div className="flex-1 min-w-0 pr-3">
-              <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-0.5">En route</p>
-              <p className="font-bold text-gray-900 truncate">{routeInfo.barName}</p>
+        <div className="absolute bottom-6 left-4 right-4 z-20 max-w-sm mx-auto">
+          <div className="bg-white rounded-2xl shadow-xl px-4 py-3 flex items-center gap-3">
+            {/* Blue dot indicator */}
+            <div className="w-2.5 h-2.5 rounded-full bg-blue-500 flex-shrink-0 animate-pulse" />
+
+            {/* Info */}
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-gray-900 text-sm truncate">{routeInfo.barName}</p>
+              <p className="text-xs text-gray-400">{routeInfo.minutes} min · {routeInfo.distance} m à pied</p>
             </div>
-            <div className="text-right flex-shrink-0">
-              <p className="text-3xl font-extrabold text-gray-900 leading-none">{routeInfo.minutes}<span className="text-base font-semibold text-gray-400 ml-1">min</span></p>
-              <p className="text-xs text-gray-400 mt-0.5">{routeInfo.distance} m à pied</p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={clearRoute}
-              className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold rounded-xl py-3 transition"
-            >
-              Annuler
-            </button>
+
+            {/* Actions */}
             <a
               href={`https://www.google.com/maps/dir/?api=1&destination=${routeInfo.lat},${routeInfo.lng}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex-1 border border-gray-200 hover:bg-gray-50 text-gray-600 text-sm font-semibold rounded-xl py-3 text-center transition"
+              className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex-shrink-0"
             >
-              Ouvrir dans Maps
+              Maps
             </a>
+            <button
+              onClick={clearRoute}
+              className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-400 text-sm flex-shrink-0 transition"
+            >
+              ✕
+            </button>
           </div>
         </div>
       )}
