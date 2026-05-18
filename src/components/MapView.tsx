@@ -58,10 +58,11 @@ export default function MapView() {
 
   const filteredBars = useMemo(() => {
     return bars.filter(bar => {
+      if (bar.beer_price === 0) return false;
       if (searchQuery && !bar.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-      if (priceFilter === 'under4') return bar.beer_price > 0 && bar.beer_price < 4;
-      if (priceFilter === 'under5') return bar.beer_price > 0 && bar.beer_price < 5;
-      if (priceFilter === 'under6') return bar.beer_price > 0 && bar.beer_price < 6;
+      if (priceFilter === 'under4') return bar.beer_price < 4;
+      if (priceFilter === 'under5') return bar.beer_price < 5;
+      if (priceFilter === 'under6') return bar.beer_price < 6;
       return true;
     });
   }, [bars, searchQuery, priceFilter]);
