@@ -49,7 +49,7 @@ export default function MapView() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [priceFilter, setPriceFilter] = useState<'all' | 'under5' | 'under8' | 'known'>('all');
+  const [priceFilter, setPriceFilter] = useState<'all' | 'under4' | 'under5' | 'under6'>('all');
 
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [suggestion, setSuggestion] = useState<(Bar & { distance: number }) | null>(null);
@@ -61,9 +61,9 @@ export default function MapView() {
   const filteredBars = useMemo(() => {
     return bars.filter(bar => {
       if (searchQuery && !bar.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-      if (priceFilter === 'under5') return bar.beer_price > 0 && bar.beer_price < 4;
-      if (priceFilter === 'under8') return bar.beer_price > 0 && bar.beer_price <= 5;
-      if (priceFilter === 'known')  return bar.beer_price > 0;
+      if (priceFilter === 'under4') return bar.beer_price > 0 && bar.beer_price < 4;
+      if (priceFilter === 'under5') return bar.beer_price > 0 && bar.beer_price < 5;
+      if (priceFilter === 'under6') return bar.beer_price > 0 && bar.beer_price < 6;
       return true;
     });
   }, [bars, searchQuery, priceFilter]);
@@ -414,15 +414,14 @@ export default function MapView() {
 
         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
           {([
-            { key: 'all',    label: 'Tous' },
-            { key: 'under5', label: '< 4€' },
-            { key: 'under8', label: '< 5€' },
-            { key: 'known',  label: 'Prix connu' },
+            { key: 'under4', label: '< 4€' },
+            { key: 'under5', label: '< 5€' },
+            { key: 'under6', label: '< 6€' },
           ] as const).map(({ key, label }) => (
             <button
               key={key}
-              onClick={() => setPriceFilter(key)}
-              className={`flex-shrink-0 text-sm font-medium px-3 py-1.5 rounded-full shadow transition ${
+              onClick={() => setPriceFilter(priceFilter === key ? 'all' : key)}
+              className={`flex-shrink-0 text-sm font-semibold px-4 py-1.5 rounded-full shadow transition ${
                 priceFilter === key ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
               }`}
             >
@@ -431,7 +430,7 @@ export default function MapView() {
           ))}
           {isFiltered && (
             <span className="flex-shrink-0 text-sm text-blue-500 font-medium px-1 py-1.5 self-center whitespace-nowrap">
-              {filteredBars.length} résultats
+              {filteredBars.length} bars
             </span>
           )}
         </div>
