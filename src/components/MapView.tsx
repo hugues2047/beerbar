@@ -484,57 +484,63 @@ export default function MapView() {
 
       {/* Nearby suggestion card */}
       {suggestion && !suggestionDismissed && !selectedBar && !showAddForm && !routeInfo && (
-        <div className="absolute bottom-48 left-4 right-4 z-10 bg-white rounded-2xl shadow-xl overflow-hidden">
-          <div className="h-1 bg-green-500" />
-          <div className="px-4 pt-3 pb-4">
+        <div className="absolute bottom-28 left-4 right-4 z-10">
+          {/* Dismiss bubble — floats above the card top-right */}
+          <div className="flex justify-end mb-1.5">
+            <button
+              onClick={() => setSuggestionDismissed(true)}
+              className="w-7 h-7 flex items-center justify-center rounded-full bg-white shadow-md text-gray-500 hover:text-gray-800 text-xs font-bold transition"
+            >
+              ✕
+            </button>
+          </div>
 
-            {/* Header row: label + dismiss */}
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-semibold text-green-600 uppercase tracking-wide">
+          <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
+            <div className="h-1 bg-green-500" />
+            <div className="px-4 pt-3 pb-4">
+
+              {/* Label */}
+              <p className="text-xs font-semibold text-green-600 uppercase tracking-wide mb-2">
                 {suggestionPriceMax ? `Bière à moins de ${suggestionPriceMax}€` : 'Moins chère'} · {Math.round(suggestion.distance)} m
               </p>
-              <button
-                onClick={() => setSuggestionDismissed(true)}
-                className="w-5 h-5 flex items-center justify-center text-gray-300 hover:text-gray-500 transition text-sm"
-              >
-                ✕
-              </button>
-            </div>
 
-            {/* Bar info + go button on same row */}
-            <div className="flex items-center gap-3">
-              <div className="flex-1 min-w-0">
-                <p className="font-bold text-gray-900 truncate">{suggestion.name}</p>
-                {suggestion.address && <p className="text-xs text-gray-400 truncate">{suggestion.address}</p>}
+              {/* Bar name + price */}
+              <div className="flex items-center gap-2 mb-1">
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-gray-900 truncate">{suggestion.name}</p>
+                  {suggestion.address && <p className="text-xs text-gray-400 truncate">{suggestion.address}</p>}
+                </div>
+                <span className="text-xl font-extrabold text-green-600 flex-shrink-0">
+                  {suggestion.beer_price.toFixed(2)}€
+                </span>
               </div>
-              <span className="text-xl font-extrabold text-green-600 flex-shrink-0">
-                {suggestion.beer_price.toFixed(2)}€
-              </span>
-              <button
-                onClick={() => showRoute(suggestion.latitude, suggestion.longitude, suggestion.name)}
-                className="w-9 h-9 flex items-center justify-center rounded-full bg-gray-900 hover:bg-gray-700 text-white flex-shrink-0 transition"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                </svg>
-              </button>
-            </div>
 
-            {/* Price chips */}
-            <div className="flex gap-1.5 mt-3">
-              {([4, 5, null] as SuggestionPriceMax[]).map(val => (
+              {/* Chips + small go button on same row */}
+              <div className="flex items-center gap-1.5 mt-3">
+                {([4, 5, null] as SuggestionPriceMax[]).map(val => (
+                  <button
+                    key={String(val)}
+                    onClick={() => { setSuggestionPriceMax(val); setSuggestionDismissed(false); }}
+                    className={`text-xs font-semibold px-2.5 py-1 rounded-full transition ${
+                      suggestionPriceMax === val
+                        ? 'bg-green-500 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {val === null ? 'Tous' : `< ${val}€`}
+                  </button>
+                ))}
+                <div className="flex-1" />
                 <button
-                  key={String(val)}
-                  onClick={() => { setSuggestionPriceMax(val); setSuggestionDismissed(false); }}
-                  className={`text-xs font-semibold px-3 py-1 rounded-full transition ${
-                    suggestionPriceMax === val
-                      ? 'bg-green-500 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
+                  onClick={() => showRoute(suggestion.latitude, suggestion.longitude, suggestion.name)}
+                  className="flex items-center gap-1.5 bg-gray-900 hover:bg-gray-700 text-white text-xs font-semibold px-3 py-1.5 rounded-full transition"
                 >
-                  {val === null ? 'Tous prix' : `< ${val}€`}
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                  </svg>
+                  Y aller
                 </button>
-              ))}
+              </div>
             </div>
           </div>
         </div>
