@@ -299,19 +299,34 @@ export default function MapView() {
       const route = data.routes?.[0];
       if (!route) return;
 
-      if (map.current.getLayer('route')) map.current.removeLayer('route');
+      if (map.current.getLayer('route-dash')) map.current.removeLayer('route-dash');
+      if (map.current.getLayer('route-casing')) map.current.removeLayer('route-casing');
       if (map.current.getSource('route')) map.current.removeSource('route');
 
       map.current.addSource('route', {
         type: 'geojson',
         data: { type: 'Feature', properties: {}, geometry: route.geometry },
       });
+      // White casing for contrast against the map
       map.current.addLayer({
-        id: 'route',
+        id: 'route-casing',
         type: 'line',
         source: 'route',
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: { 'line-color': '#3B82F6', 'line-width': 5, 'line-opacity': 0.85 },
+        layout: { 'line-join': 'round', 'line-cap': 'butt' },
+        paint: { 'line-color': '#ffffff', 'line-width': 10, 'line-opacity': 0.6 },
+      });
+      // Dashed blue line on top
+      map.current.addLayer({
+        id: 'route-dash',
+        type: 'line',
+        source: 'route',
+        layout: { 'line-join': 'round', 'line-cap': 'butt' },
+        paint: {
+          'line-color': '#2563EB',
+          'line-width': 5,
+          'line-dasharray': [1.5, 1.5],
+          'line-opacity': 1,
+        },
       });
 
       const coords = route.geometry.coordinates as [number, number][];
@@ -329,7 +344,8 @@ export default function MapView() {
 
   function clearRoute() {
     if (!map.current) return;
-    if (map.current.getLayer('route')) map.current.removeLayer('route');
+    if (map.current.getLayer('route-dash')) map.current.removeLayer('route-dash');
+    if (map.current.getLayer('route-casing')) map.current.removeLayer('route-casing');
     if (map.current.getSource('route')) map.current.removeSource('route');
     setRouteInfo(null);
   }
@@ -498,13 +514,16 @@ export default function MapView() {
             <div className="flex gap-2">
               <button
                 onClick={() => showRoute(suggestion.latitude, suggestion.longitude, suggestion.name)}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl py-2.5 transition"
+                className="flex-1 flex items-center justify-center gap-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold rounded-xl py-3 transition"
               >
-                Y aller →
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                </svg>
+                Y aller
               </button>
               <button
                 onClick={() => setSuggestionDismissed(true)}
-                className="px-4 py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-medium hover:bg-gray-200 transition"
+                className="px-4 py-3 rounded-xl bg-gray-100 text-gray-500 text-sm font-medium hover:bg-gray-200 transition"
               >
                 Fermer
               </button>
