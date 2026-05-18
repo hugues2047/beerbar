@@ -481,21 +481,41 @@ export default function MapView() {
         <div className="absolute bottom-48 left-4 right-4 z-10 bg-white rounded-2xl shadow-xl overflow-hidden">
           <div className="h-1 bg-green-500" />
           <div className="px-4 pt-3 pb-4">
-            <p className="text-xs font-semibold text-green-600 uppercase tracking-wide mb-2">
-              {suggestionPriceMax ? `Bière à moins de ${suggestionPriceMax}€` : 'Moins chère à proximité'} · {Math.round(suggestion.distance)} m
-            </p>
-            <div className="flex items-center gap-3 mb-3">
+
+            {/* Header row: label + dismiss */}
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-green-600 uppercase tracking-wide">
+                {suggestionPriceMax ? `Bière à moins de ${suggestionPriceMax}€` : 'Moins chère'} · {Math.round(suggestion.distance)} m
+              </p>
+              <button
+                onClick={() => setSuggestionDismissed(true)}
+                className="w-5 h-5 flex items-center justify-center text-gray-300 hover:text-gray-500 transition text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Bar info + go button on same row */}
+            <div className="flex items-center gap-3">
               <div className="flex-1 min-w-0">
                 <p className="font-bold text-gray-900 truncate">{suggestion.name}</p>
                 {suggestion.address && <p className="text-xs text-gray-400 truncate">{suggestion.address}</p>}
               </div>
-              <span className="text-2xl font-extrabold text-green-600 flex-shrink-0">
+              <span className="text-xl font-extrabold text-green-600 flex-shrink-0">
                 {suggestion.beer_price.toFixed(2)}€
               </span>
+              <button
+                onClick={() => showRoute(suggestion.latitude, suggestion.longitude, suggestion.name)}
+                className="w-9 h-9 flex items-center justify-center rounded-full bg-gray-900 hover:bg-gray-700 text-white flex-shrink-0 transition"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                </svg>
+              </button>
             </div>
 
-            {/* Price threshold chips */}
-            <div className="flex gap-1.5 mb-3">
+            {/* Price chips */}
+            <div className="flex gap-1.5 mt-3">
               {([4, 5, null] as SuggestionPriceMax[]).map(val => (
                 <button
                   key={String(val)}
@@ -509,24 +529,6 @@ export default function MapView() {
                   {val === null ? 'Tous prix' : `< ${val}€`}
                 </button>
               ))}
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                onClick={() => showRoute(suggestion.latitude, suggestion.longitude, suggestion.name)}
-                className="flex-1 flex items-center justify-center gap-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold rounded-xl py-3 transition"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                </svg>
-                Y aller
-              </button>
-              <button
-                onClick={() => setSuggestionDismissed(true)}
-                className="px-4 py-3 rounded-xl bg-gray-100 text-gray-500 text-sm font-medium hover:bg-gray-200 transition"
-              >
-                Fermer
-              </button>
             </div>
           </div>
         </div>
