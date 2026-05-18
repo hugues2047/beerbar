@@ -43,9 +43,7 @@ export default function MapView() {
   const [bars, setBars] = useState<Bar[]>([]);
   const [selectedBar, setSelectedBar] = useState<Bar | null>(null);
   const [showPriceForm, setShowPriceForm] = useState(false);
-  const [showAddForm, setShowAddForm] = useState(false);
   const [priceInput, setPriceInput] = useState('');
-  const [newBar, setNewBar] = useState({ name: '', address: '', price: '' });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -246,7 +244,6 @@ export default function MapView() {
           serves_beer: p.serves_beer ?? null, amenity_type: p.amenity_type ?? null,
         });
         setShowPriceForm(false);
-        setShowAddForm(false);
         setPriceInput('');
         setMessage('');
       });
@@ -374,38 +371,9 @@ export default function MapView() {
     setLoading(false);
   }
 
-  async function addNewBar() {
-    if (!newBar.name || !newBar.address || !newBar.price) { setMessage('Tous les champs sont obligatoires.'); return; }
-    const price = parseFloat(newBar.price);
-    if (isNaN(price) || price <= 0) { setMessage('Entre un prix valide (ex: 5.50)'); return; }
-    setLoading(true);
-    const geocodeRes = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(newBar.address + ', Paris')}.json?access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}&limit=1&country=fr`
-    );
-    const geocodeData = await geocodeRes.json();
-    if (!geocodeData.features?.length) {
-      setMessage("Adresse introuvable. Essaie d'être plus précis.");
-      setLoading(false);
-      return;
-    }
-    const [longitude, latitude] = geocodeData.features[0].center;
-    const { error } = await supabase.from('bars').insert({ name: newBar.name, address: newBar.address, latitude, longitude, beer_price: price, submitted_by: 'user' });
-    if (error) {
-      setMessage("Erreur lors de l'ajout.");
-    } else {
-      setMessage('Bar ajouté, merci !');
-      const { data: inserted } = await supabase
-        .from('bars').select('id,name,address,latitude,longitude,beer_price,phone,last_updated').eq('name', newBar.name).eq('latitude', latitude).limit(1);
-      if (inserted?.[0]) setBars(prev => [...prev, inserted[0] as Bar]);
-      setTimeout(() => { setShowAddForm(false); setNewBar({ name: '', address: '', price: '' }); setMessage(''); }, 1500);
-    }
-    setLoading(false);
-  }
-
   function closeAll() {
     setSelectedBar(null);
     setShowPriceForm(false);
-    setShowAddForm(false);
     setMessage('');
     setPriceInput('');
   }
@@ -453,13 +421,6 @@ export default function MapView() {
         </div>
       </div>
 
-      {/* Add bar button */}
-      <button
-        onClick={() => { closeAll(); setShowAddForm(true); }}
-        className="absolute bottom-36 right-4 z-10 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xl w-14 h-14 rounded-full shadow-xl transition flex items-center justify-center"
-      >
-        +
-      </button>
 
       {/* Legend */}
       <div className="absolute bottom-8 left-4 z-10 bg-white rounded-2xl shadow-lg px-4 py-3 text-sm space-y-1.5">
@@ -478,7 +439,7 @@ export default function MapView() {
       </div>
 
       {/* Nearby suggestion card */}
-      {suggestion && !suggestionDismissed && !selectedBar && !showAddForm && !routeInfo && (
+      {suggestion && !suggestionDismissed && !selectedBar && !routeInfo && (
         <div className="absolute bottom-28 left-4 right-4 z-10">
           {/* Dismiss bubble — floats above the card top-right */}
           <div className="flex justify-end mb-1.5">
@@ -542,7 +503,7 @@ export default function MapView() {
       )}
 
       {/* Reopen suggestion bubble — shown when dismissed and a suggestion exists */}
-      {suggestion && suggestionDismissed && !selectedBar && !showAddForm && !routeInfo && (
+      {suggestion && suggestionDismissed && !selectedBar && !routeInfo && (
         <button
           onClick={() => setSuggestionDismissed(false)}
           className="absolute bottom-28 right-4 z-10 bg-white shadow-lg rounded-full px-3 py-2 flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition"
@@ -585,7 +546,7 @@ export default function MapView() {
       )}
 
       {/* Bar info panel */}
-      {selectedBar && !showAddForm && (
+      {selectedBar && (
         <div className="absolute bottom-0 left-0 right-0 z-20 bg-white rounded-t-3xl shadow-2xl px-5 pt-5 pb-8 max-w-lg mx-auto">
           <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
           <div className="flex justify-between items-start mb-3">
@@ -635,49 +596,6 @@ export default function MapView() {
         </div>
       )}
 
-      {/* Add new bar panel */}
-      {showAddForm && (
-        <div className="absolute bottom-0 left-0 right-0 z-20 bg-white rounded-t-3xl shadow-2xl px-5 pt-5 pb-8 max-w-lg mx-auto">
-          <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-bold text-gray-900">Ajouter un bar</h2>
-            <button onClick={closeAll} className="text-gray-300 hover:text-gray-500 text-2xl leading-none">✕</button>
-          </div>
-          <div className="space-y-3">
-            <input
-              type="text" placeholder="Nom du bar"
-              value={newBar.name}
-              onChange={e => setNewBar(b => ({ ...b, name: e.target.value }))}
-              className="w-full border border-gray-200 rounded-2xl px-4 py-3.5 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <input
-              type="text" placeholder="Adresse (ex: 10 rue de la Paix)"
-              value={newBar.address}
-              onChange={e => setNewBar(b => ({ ...b, address: e.target.value }))}
-              className="w-full border border-gray-200 rounded-2xl px-4 py-3.5 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <input
-              type="number" step="0.1" min="0"
-              placeholder="Prix de la bière en € (ex: 5.50)"
-              value={newBar.price}
-              onChange={e => setNewBar(b => ({ ...b, price: e.target.value }))}
-              className="w-full border border-gray-200 rounded-2xl px-4 py-3.5 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            {message && (
-              <p className="text-sm text-center font-medium" style={{ color: message.includes('merci') ? '#16a34a' : '#dc2626' }}>
-                {message}
-              </p>
-            )}
-            <button
-              onClick={addNewBar}
-              disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-2xl py-3.5 font-semibold transition disabled:opacity-50"
-            >
-              {loading ? 'Géolocalisation en cours...' : 'Ajouter ce bar'}
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
