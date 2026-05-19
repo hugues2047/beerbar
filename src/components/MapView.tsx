@@ -55,6 +55,7 @@ export default function MapView() {
   const [suggestionPriceMax, setSuggestionPriceMax] = useState<SuggestionPriceMax>(4);
 
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
+  const [legendOpen, setLegendOpen] = useState(false);
 
   const filteredBars = useMemo(() => {
     return bars.filter(bar => {
@@ -100,12 +101,14 @@ export default function MapView() {
     mapboxgl.accessToken = token;
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
+      style: 'mapbox://styles/mapbox/light-v11',
       center: [2.3622, 48.8729],
       zoom: 14,
     });
     map.current.on('error', e => console.error('Mapbox error:', e));
-    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+    const isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent);
+    // Only show zoom buttons on desktop — mobile uses pinch
+    if (!isMobile) map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
     const geolocate = new mapboxgl.GeolocateControl({
       positionOptions: { enableHighAccuracy: true },
       trackUserLocation: true,
@@ -113,7 +116,7 @@ export default function MapView() {
     });
     map.current.addControl(geolocate, 'top-right');
     map.current.on('load', () => {
-      if (/Mobi|Android|iPhone/i.test(navigator.userAgent)) geolocate.trigger();
+      if (isMobile) geolocate.trigger();
     });
   }, []);
 
@@ -157,6 +160,15 @@ export default function MapView() {
 
       if (map.current!.getSource('bars')) return;
 
+      // Hide noisy POI layers — restaurants, shops, hotels, etc.
+      // Keep transit (metro) because useful in Paris
+      const hideLayers = ['poi-label', 'airport-label'];
+      hideLayers.forEach(id => {
+        if (map.current!.getLayer(id)) {
+          map.current!.setLayoutProperty(id, 'visibility', 'none');
+        }
+      });
+
       map.current!.addSource('bars', {
         type: 'geojson',
         data: geojson,
@@ -165,16 +177,16 @@ export default function MapView() {
         clusterRadius: 40,
       });
 
-      // Cluster bubble
+      // Cluster bubble — dark pill
       map.current!.addLayer({
         id: 'clusters',
         type: 'circle',
         source: 'bars',
         filter: ['has', 'point_count'],
         paint: {
-          'circle-color': '#3B82F6',
+          'circle-color': '#1a1a1a',
           'circle-radius': ['step', ['get', 'point_count'], 16, 20, 22, 100, 28],
-          'circle-opacity': 0.85,
+          'circle-opacity': 0.92,
         },
       });
 
@@ -192,13 +204,18 @@ export default function MapView() {
         paint: { 'text-color': '#ffffff' },
       });
 
-      // White ring behind individual dots
+      // White halo behind individual dots
       map.current!.addLayer({
         id: 'bars-outline',
         type: 'circle',
         source: 'bars',
         filter: ['!', ['has', 'point_count']],
-        paint: { 'circle-radius': 9, 'circle-color': '#ffffff', 'circle-opacity': 0.9 },
+        paint: {
+          'circle-radius': 10,
+          'circle-color': '#ffffff',
+          'circle-opacity': 1,
+          'circle-blur': 0,
+        },
       });
 
       // Colored dot
@@ -380,108 +397,124 @@ export default function MapView() {
   }
 
   return (
-    <div className="relative w-full h-screen overflow-hidden">
+    <div className="relative w-full h-screen overflow-hidden" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif' }}>
 
-      {/* Map canvas */}
-      <div ref={mapContainer} className="absolute inset-0" style={{ width: '100%', height: '100%' }} />
+      {/* ── MAP ── */}
+      <div ref={mapContainer} className="absolute inset-0" />
 
-      {/* Search bar + price filter chips */}
-      <div className="absolute top-3 left-3 right-14 z-10 flex flex-col gap-2">
-        <div className="flex items-center gap-2 bg-white rounded-2xl shadow-lg px-3 py-2">
-          <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Rechercher un bar..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            className="flex-1 text-sm text-gray-900 placeholder-gray-400 focus:outline-none bg-transparent"
-          />
-          {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="text-gray-300 hover:text-gray-500 text-lg leading-none">✕</button>
-          )}
-        </div>
+      {/* ── TOP CHROME ── */}
+      <div
+        className="absolute top-0 left-0 right-0 z-10 pointer-events-none"
+        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+      >
+        <div className="px-3 pt-3 flex flex-col gap-2 pointer-events-auto">
 
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-          {([
-            { key: 'under4', label: '< 4€' },
-            { key: 'under5', label: '< 5€' },
-            { key: 'under6', label: '< 6€' },
-          ] as const).map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => setPriceFilter(priceFilter === key ? 'all' : key)}
-              className={`flex-shrink-0 text-sm font-semibold px-4 py-1.5 rounded-full shadow transition ${
-                priceFilter === key ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
-              }`}
+          {/* Search bar */}
+          <div className="flex gap-2">
+            <div
+              className="flex-1 flex items-center gap-2.5 bg-white/95 rounded-2xl px-3.5 py-3 backdrop-blur-sm"
+              style={{ marginRight: '0', boxShadow: '0 1px 12px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.04)' }}
             >
-              {label}
-            </button>
-          ))}
+              <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Rechercher un bar…"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="flex-1 text-sm font-medium text-gray-900 placeholder-gray-400 focus:outline-none bg-transparent min-w-0 leading-none"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="w-5 h-5 flex items-center justify-center rounded-full bg-gray-200 text-gray-500 text-[10px] flex-shrink-0">✕</button>
+              )}
+            </div>
+            {/* Empty space for mapbox geolocate btn */}
+            <div className="w-10 flex-shrink-0" />
+          </div>
+
+          {/* Filter chips */}
+          <div className="flex gap-1.5 overflow-x-auto scrollbar-hide">
+            {([
+              { key: 'under4', label: '< 4 €' },
+              { key: 'under5', label: '< 5 €' },
+              { key: 'under6', label: '< 6 €' },
+            ] as const).map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setPriceFilter(priceFilter === key ? 'all' : key)}
+                className={`flex-shrink-0 text-xs font-semibold px-3.5 py-1.5 rounded-full transition-all active:scale-95 ${
+                  priceFilter === key
+                    ? 'bg-gray-900 text-white'
+                    : 'bg-white/90 text-gray-700 backdrop-blur-sm'
+                }`}
+                style={{ boxShadow: priceFilter === key ? 'none' : '0 1px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)' }}
+              >
+                {label}
+              </button>
+            ))}
+
+            {/* Color legend dots — inline with chips */}
+            <div className="ml-auto flex items-center gap-2 bg-white/90 backdrop-blur-sm rounded-full px-3 py-1.5 flex-shrink-0"
+                 style={{ boxShadow: '0 1px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)' }}>
+              <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" title="< 5€" />
+              <span className="w-2 h-2 rounded-full bg-orange-500 flex-shrink-0" title="5–8€" />
+              <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" title="> 8€" />
+            </div>
+          </div>
         </div>
       </div>
 
-
-      {/* Legend */}
-      <div className="absolute bottom-8 left-4 z-10 bg-white rounded-2xl shadow-lg px-4 py-3 text-sm space-y-1.5">
-        <p className="font-semibold text-gray-700 text-xs uppercase tracking-wide mb-2">Prix d'une bière</p>
-        {[
-          { color: 'bg-green-500',  label: 'Moins de 5 €' },
-          { color: 'bg-orange-500', label: '5 € – 8 €' },
-          { color: 'bg-red-500',    label: 'Plus de 8 €' },
-          { color: 'bg-gray-400',   label: 'Prix inconnu' },
-        ].map(({ color, label }) => (
-          <div key={label} className="flex items-center gap-2">
-            <span className={`w-3 h-3 rounded-full ${color} flex-shrink-0`} />
-            <span className="text-gray-600">{label}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Nearby suggestion card */}
+      {/* ── NEARBY SUGGESTION ── */}
       {suggestion && !suggestionDismissed && !selectedBar && !routeInfo && (
-        <div className="absolute bottom-28 left-4 right-4 z-10">
-          {/* Dismiss bubble — floats above the card top-right */}
-          <div className="flex justify-end mb-1.5">
-            <button
-              onClick={() => setSuggestionDismissed(true)}
-              className="w-7 h-7 flex items-center justify-center rounded-full bg-white shadow-md text-gray-500 hover:text-gray-800 text-xs font-bold transition"
-            >
-              ✕
-            </button>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
-            <div className="h-1 bg-green-500" />
-            <div className="px-4 pt-3 pb-4">
-
-              {/* Label */}
-              <p className="text-xs font-semibold text-green-600 uppercase tracking-wide mb-2">
-                {suggestionPriceMax ? `Bière à moins de ${suggestionPriceMax}€` : 'Moins chère'} · {Math.round(suggestion.distance)} m
-              </p>
-
-              {/* Bar name + price */}
-              <div className="flex items-center gap-2 mb-1">
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-gray-900 truncate">{suggestion.name}</p>
-                  {suggestion.address && <p className="text-xs text-gray-400 truncate">{suggestion.address}</p>}
+        <div
+          className="absolute left-3 right-3 z-10"
+          style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}
+        >
+          <div
+            className="bg-white rounded-2xl overflow-hidden"
+            style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04)' }}
+          >
+            <div className="px-4 py-4">
+              {/* Header row */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0" />
+                  <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                    {suggestionPriceMax ? `≤ ${suggestionPriceMax} €` : 'Le moins cher'} · {Math.round(suggestion.distance)} m
+                  </span>
                 </div>
-                <span className="text-xl font-extrabold text-green-600 flex-shrink-0">
-                  {suggestion.beer_price.toFixed(2)}€
-                </span>
+                <button
+                  onClick={() => setSuggestionDismissed(true)}
+                  className="w-6 h-6 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 active:bg-gray-200 text-[11px]"
+                >✕</button>
               </div>
 
-              {/* Chips + small go button on same row */}
-              <div className="flex items-center gap-1.5 mt-3">
+              {/* Name + price */}
+              <div className="flex items-center gap-3 mb-3">
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-gray-900 text-[17px] leading-tight truncate">{suggestion.name}</p>
+                  {suggestion.address && (
+                    <p className="text-[12px] text-gray-400 truncate mt-0.5">{suggestion.address}</p>
+                  )}
+                </div>
+                <div className="flex-shrink-0 text-right">
+                  <span className="text-[28px] font-black tabular-nums leading-none" style={{ color: '#16a34a' }}>
+                    {suggestion.beer_price.toFixed(2)}€
+                  </span>
+                </div>
+              </div>
+
+              {/* Bottom row: threshold toggles + go */}
+              <div className="flex items-center gap-1.5">
                 {([4, 5, null] as SuggestionPriceMax[]).map(val => (
                   <button
                     key={String(val)}
                     onClick={() => { setSuggestionPriceMax(val); setSuggestionDismissed(false); }}
-                    className={`text-xs font-semibold px-2.5 py-1 rounded-full transition ${
+                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-full transition active:scale-95 ${
                       suggestionPriceMax === val
-                        ? 'bg-green-500 text-white'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        ? 'bg-gray-900 text-white'
+                        : 'bg-gray-100 text-gray-500'
                     }`}
                   >
                     {val === null ? 'Tous' : `< ${val}€`}
@@ -490,12 +523,12 @@ export default function MapView() {
                 <div className="flex-1" />
                 <button
                   onClick={() => showRoute(suggestion.latitude, suggestion.longitude, suggestion.name)}
-                  className="flex items-center gap-1.5 bg-gray-900 hover:bg-gray-700 text-white text-xs font-semibold px-3 py-1.5 rounded-full transition"
+                  className="flex items-center gap-1.5 bg-gray-900 text-white text-[13px] font-semibold px-4 py-2 rounded-xl active:bg-gray-700 transition"
                 >
+                  Y aller
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 8l4 4m0 0l-4 4m4-4H3" />
                   </svg>
-                  Y aller
                 </button>
               </div>
             </div>
@@ -503,100 +536,152 @@ export default function MapView() {
         </div>
       )}
 
-      {/* Reopen suggestion bubble — shown when dismissed and a suggestion exists */}
+      {/* ── REOPEN pill ── */}
       {suggestion && suggestionDismissed && !selectedBar && !routeInfo && (
         <button
           onClick={() => setSuggestionDismissed(false)}
-          className="absolute bottom-28 right-4 z-10 bg-white shadow-lg rounded-full px-3 py-2 flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition"
+          className="absolute right-3 z-10 bg-white rounded-full pl-2.5 pr-3.5 py-2 flex items-center gap-1.5 active:scale-95 transition"
+          style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)', boxShadow: '0 2px 16px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04)' }}
         >
-          <span>🍺</span>
-          <span className="text-green-600 font-bold">{suggestion.beer_price.toFixed(2)}€</span>
+          <span className="text-sm">🍺</span>
+          <span className="text-[13px] font-bold tabular-nums" style={{ color: '#16a34a' }}>{suggestion.beer_price.toFixed(2)}€</span>
         </button>
       )}
 
-      {/* In-app route info — compact floating card */}
+      {/* ── ROUTE banner ── */}
       {routeInfo && (
-        <div className="absolute bottom-6 left-4 right-4 z-20 max-w-sm mx-auto">
-          <div className="bg-white rounded-2xl shadow-xl px-4 py-3 flex items-center gap-3">
-            {/* Blue dot indicator */}
-            <div className="w-2.5 h-2.5 rounded-full bg-blue-500 flex-shrink-0 animate-pulse" />
-
-            {/* Info */}
+        <div
+          className="absolute left-3 right-3 z-20"
+          style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}
+        >
+          <div
+            className="bg-gray-900 rounded-2xl px-4 py-3.5 flex items-center gap-3"
+            style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.18)' }}
+          >
+            <div className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0 animate-pulse" />
             <div className="flex-1 min-w-0">
-              <p className="font-semibold text-gray-900 text-sm truncate">{routeInfo.barName}</p>
-              <p className="text-xs text-gray-400">{routeInfo.minutes} min · {routeInfo.distance} m à pied</p>
+              <p className="text-white font-semibold text-[14px] truncate leading-tight">{routeInfo.barName}</p>
+              <p className="text-gray-400 text-[12px] mt-0.5">{routeInfo.minutes} min · {routeInfo.distance} m à pied</p>
             </div>
-
-            {/* Actions */}
             <a
               href={`https://www.google.com/maps/dir/?api=1&destination=${routeInfo.lat},${routeInfo.lng}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex-shrink-0"
-            >
-              Maps
-            </a>
+              target="_blank" rel="noopener noreferrer"
+              className="text-blue-400 text-[12px] font-semibold flex-shrink-0 px-1"
+            >Maps ↗</a>
             <button
               onClick={clearRoute}
-              className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-400 text-sm flex-shrink-0 transition"
-            >
-              ✕
-            </button>
+              className="w-7 h-7 flex items-center justify-center rounded-full bg-white/10 text-gray-400 text-xs flex-shrink-0 active:bg-white/20"
+            >✕</button>
           </div>
         </div>
       )}
 
-      {/* Bar info panel */}
+      {/* ── BAR DETAIL SHEET ── */}
       {selectedBar && (
-        <div className="absolute bottom-0 left-0 right-0 z-20 bg-white rounded-t-3xl shadow-2xl px-5 pt-5 pb-8 max-w-lg mx-auto">
-          <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
-          <div className="flex justify-between items-start mb-3">
-            <div className="flex-1 pr-3">
-              <h2 className="text-lg font-bold text-gray-900 leading-tight">{selectedBar.name}</h2>
-              {selectedBar.address && <p className="text-sm text-gray-500 mt-0.5">{selectedBar.address}</p>}
-              {selectedBar.phone && (
-                <a href={`tel:${selectedBar.phone}`} className="text-sm text-blue-500 mt-0.5 block">{selectedBar.phone}</a>
-              )}
-            </div>
-            <button onClick={closeAll} className="text-gray-300 hover:text-gray-500 text-2xl leading-none">✕</button>
+        <div
+          className="absolute bottom-0 left-0 right-0 z-30 bg-white"
+          style={{
+            borderRadius: '20px 20px 0 0',
+            paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+            boxShadow: '0 -2px 32px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.04)',
+          }}
+        >
+          {/* Handle */}
+          <div className="flex justify-center pt-3 pb-1">
+            <div className="w-8 h-[3px] rounded-full bg-gray-200" />
           </div>
-          <div className="flex items-center gap-2 mb-4">
-            <span className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: getPriceColor(selectedBar.beer_price) }} />
-            <span className="text-2xl font-bold text-gray-900">{formatPrice(selectedBar.beer_price)}</span>
-            {selectedBar.beer_price > 0 && (
-              <span className="text-xs text-gray-400 ml-1">· {new Date(selectedBar.last_updated).toLocaleDateString('fr-FR')}</span>
+
+          <div className="px-5 pt-3 pb-5">
+            {/* Name row */}
+            <div className="flex items-start gap-2 mb-1">
+              <div className="flex-1 min-w-0">
+                <h2 className="text-[20px] font-bold text-gray-900 leading-snug">{selectedBar.name}</h2>
+              </div>
+              <button
+                onClick={closeAll}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 flex-shrink-0 active:bg-gray-200 mt-0.5 text-sm"
+              >✕</button>
+            </div>
+
+            {/* Address */}
+            {selectedBar.address && (
+              <p className="text-[13px] text-gray-400 mb-4 leading-snug">{selectedBar.address}</p>
+            )}
+
+            {!showPriceForm ? (
+              <>
+                {/* Price + date */}
+                <div className="flex items-end gap-2.5 mb-5">
+                  <span
+                    className="text-[44px] font-black leading-none tabular-nums"
+                    style={{ color: selectedBar.beer_price === 0 ? '#d1d5db' : getPriceColor(selectedBar.beer_price) }}
+                  >
+                    {selectedBar.beer_price === 0 ? '—' : `${selectedBar.beer_price.toFixed(2)}€`}
+                  </span>
+                  <div className="pb-1.5">
+                    <p className="text-[12px] text-gray-400 font-medium leading-tight">
+                      {selectedBar.beer_price === 0 ? 'Prix inconnu' : 'la pinte'}
+                    </p>
+                    {selectedBar.beer_price > 0 && (
+                      <p className="text-[11px] text-gray-300 leading-tight">
+                        {new Date(selectedBar.last_updated).toLocaleDateString('fr-FR')}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Buttons */}
+                <div className="flex gap-2.5">
+                  {userLocation && (
+                    <button
+                      onClick={() => showRoute(selectedBar.latitude, selectedBar.longitude, selectedBar.name)}
+                      className="flex-1 flex items-center justify-center gap-2 bg-gray-900 text-white rounded-xl py-3.5 font-semibold text-[14px] active:bg-gray-700 transition"
+                    >
+                      Y aller
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                      </svg>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowPriceForm(true)}
+                    className={`flex items-center justify-center rounded-xl py-3.5 font-semibold text-[14px] bg-gray-100 text-gray-700 active:bg-gray-200 transition ${userLocation ? 'px-4' : 'flex-1'}`}
+                  >
+                    Signaler un prix
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-[14px] font-semibold text-gray-800">Combien coûte la pinte ?</p>
+                <div className="relative">
+                  <input
+                    type="number" step="0.1" min="0"
+                    placeholder="5.50"
+                    value={priceInput}
+                    onChange={e => setPriceInput(e.target.value)}
+                    className="w-full bg-gray-100 rounded-xl px-4 py-3.5 text-gray-900 text-[18px] font-bold focus:outline-none focus:ring-2 focus:ring-gray-900 pr-10"
+                    autoFocus
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[18px] font-bold text-gray-400">€</span>
+                </div>
+                {message && <p className="text-sm text-center font-medium text-green-600">{message}</p>}
+                <div className="flex gap-2.5">
+                  <button
+                    onClick={() => setShowPriceForm(false)}
+                    className="flex-1 bg-gray-100 text-gray-700 rounded-xl py-3.5 font-semibold text-[14px] active:bg-gray-200"
+                  >Annuler</button>
+                  <button
+                    onClick={submitPrice}
+                    disabled={loading}
+                    className="flex-1 bg-gray-900 text-white rounded-xl py-3.5 font-semibold text-[14px] active:bg-gray-700 disabled:opacity-40"
+                  >{loading ? 'Envoi…' : 'Confirmer'}</button>
+                </div>
+              </div>
             )}
           </div>
-          {!showPriceForm ? (
-            <button
-              onClick={() => setShowPriceForm(true)}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-2xl py-3.5 font-semibold transition"
-            >
-              Soumettre un prix
-            </button>
-          ) : (
-            <div className="space-y-3">
-              <input
-                type="number" step="0.1" min="0"
-                placeholder="Prix en € (ex: 5.50)"
-                value={priceInput}
-                onChange={e => setPriceInput(e.target.value)}
-                className="w-full border border-gray-200 rounded-2xl px-4 py-3.5 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                autoFocus
-              />
-              {message && <p className="text-sm text-center text-green-600 font-medium">{message}</p>}
-              <button
-                onClick={submitPrice}
-                disabled={loading}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-2xl py-3.5 font-semibold transition disabled:opacity-50"
-              >
-                {loading ? 'Envoi en cours...' : 'Confirmer le prix'}
-              </button>
-            </div>
-          )}
         </div>
       )}
-
     </div>
   );
 }
