@@ -400,7 +400,7 @@ export default function MapView() {
     <div className="relative w-full h-screen overflow-hidden" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif' }}>
 
       {/* ── MAP ── */}
-      <div ref={mapContainer} className="absolute inset-0" />
+      <div ref={mapContainer} className="w-full h-full" />
 
       {/* ── TOP CHROME ── */}
       <div
