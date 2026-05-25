@@ -21,11 +21,6 @@ function getPriceColor(price: number): string {
   return '#EF4444';
 }
 
-function formatPrice(price: number): string {
-  if (price === 0) return 'Prix inconnu';
-  return `${price.toFixed(2)} €`;
-}
-
 type SuggestionPriceMax = 4 | 5 | null;
 
 type RouteInfo = {
@@ -55,19 +50,21 @@ export default function MapView() {
   const [suggestionPriceMax, setSuggestionPriceMax] = useState<SuggestionPriceMax>(4);
 
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
-  const [legendOpen, setLegendOpen] = useState(false);
+  const [terraceFilter, setTerraceFilter] = useState(false);
+  const [barsLoading, setBarsLoading] = useState(true);
 
   const filteredBars = useMemo(() => {
     return bars.filter(bar => {
       if (searchQuery && !bar.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      if (terraceFilter && !bar.has_terrace) return false;
       if (priceFilter === 'under4') return bar.beer_price > 0 && bar.beer_price < 4;
       if (priceFilter === 'under5') return bar.beer_price > 0 && bar.beer_price < 5;
       if (priceFilter === 'under6') return bar.beer_price > 0 && bar.beer_price < 6;
       return true;
     });
-  }, [bars, searchQuery, priceFilter]);
+  }, [bars, searchQuery, priceFilter, terraceFilter]);
 
-  const isFiltered = priceFilter !== 'all' || !!searchQuery;
+  const isFiltered = priceFilter !== 'all' || !!searchQuery || terraceFilter;
 
   // Load all bars from Supabase
   useEffect(() => {
@@ -82,12 +79,13 @@ export default function MapView() {
       const requests = Array.from({ length: numBatches }, (_, i) =>
         supabase
           .from('bars')
-          .select('id,name,address,latitude,longitude,beer_price,phone,last_updated')
+          .select('id,name,address,latitude,longitude,beer_price,phone,last_updated,has_terrace,terrace_grande')
           .or('serves_beer.eq.true,serves_beer.is.null')
           .range(i * batchSize, (i + 1) * batchSize - 1)
       );
       const results = await Promise.all(requests);
       setBars(results.flatMap(r => r.data || []) as Bar[]);
+      setBarsLoading(false);
     }
     loadBars();
   }, []);
@@ -257,8 +255,9 @@ export default function MapView() {
           id: p.id, name: p.name, address: p.address,
           latitude: p.latitude, longitude: p.longitude,
           beer_price: p.beer_price, phone: p.phone,
-          submitted_by: p.submitted_by, last_updated: p.last_updated,
+          submitted_by: null, last_updated: p.last_updated,
           serves_beer: p.serves_beer ?? null, amenity_type: p.amenity_type ?? null,
+          has_terrace: p.has_terrace ?? null, terrace_grande: p.terrace_grande ?? null,
         });
         setShowPriceForm(false);
         setPriceInput('');
@@ -396,10 +395,21 @@ export default function MapView() {
   }
 
   return (
-    <div className="relative w-full h-screen overflow-hidden" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif' }}>
+    <div className="fixed inset-0 overflow-hidden" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif' }}>
 
       {/* ── MAP ── */}
       <div ref={mapContainer} className="w-full h-full" />
+
+      {/* ── LOADING OVERLAY ── */}
+      {barsLoading && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
+          <div className="bg-white/90 backdrop-blur-sm rounded-2xl px-5 py-3.5 flex items-center gap-3"
+               style={{ boxShadow: '0 2px 16px rgba(0,0,0,0.10)' }}>
+            <div className="w-4 h-4 border-2 border-gray-900 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+            <span className="text-[13px] font-semibold text-gray-700">Chargement des bars…</span>
+          </div>
+        </div>
+      )}
 
       {/* ── TOP CHROME ── */}
       <div
@@ -452,6 +462,17 @@ export default function MapView() {
                 {label}
               </button>
             ))}
+            <button
+              onClick={() => setTerraceFilter(!terraceFilter)}
+              className={`flex-shrink-0 text-xs font-semibold px-3.5 py-1.5 rounded-full transition-all active:scale-95 ${
+                terraceFilter
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-white/90 text-gray-700 backdrop-blur-sm'
+              }`}
+              style={{ boxShadow: terraceFilter ? 'none' : '0 1px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)' }}
+            >
+              🌿 Terrasse
+            </button>
 
             {/* Color legend dots — inline with chips */}
             <div className="ml-auto flex items-center gap-2 bg-white/90 backdrop-blur-sm rounded-full px-3 py-1.5 flex-shrink-0"
@@ -467,8 +488,8 @@ export default function MapView() {
       {/* ── NEARBY SUGGESTION ── */}
       {suggestion && !suggestionDismissed && !selectedBar && !routeInfo && (
         <div
-          className="absolute left-3 right-3 z-10"
-          style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}
+          className="absolute left-3 right-3 z-10 card-appear"
+          style={{ bottom: 'calc(env(safe-area-inset-bottom, 16px) + 16px)' }}
         >
           <div
             className="bg-white rounded-2xl overflow-hidden"
@@ -540,7 +561,7 @@ export default function MapView() {
         <button
           onClick={() => setSuggestionDismissed(false)}
           className="absolute right-3 z-10 bg-white rounded-full pl-2.5 pr-3.5 py-2 flex items-center gap-1.5 active:scale-95 transition"
-          style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)', boxShadow: '0 2px 16px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04)' }}
+          style={{ bottom: 'calc(env(safe-area-inset-bottom, 16px) + 16px)', boxShadow: '0 2px 16px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04)' }}
         >
           <span className="text-sm">🍺</span>
           <span className="text-[13px] font-bold tabular-nums" style={{ color: '#16a34a' }}>{suggestion.beer_price.toFixed(2)}€</span>
@@ -550,8 +571,8 @@ export default function MapView() {
       {/* ── ROUTE banner ── */}
       {routeInfo && (
         <div
-          className="absolute left-3 right-3 z-20"
-          style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}
+          className="absolute left-3 right-3 z-20 card-appear"
+          style={{ bottom: 'calc(env(safe-area-inset-bottom, 16px) + 16px)' }}
         >
           <div
             className="bg-gray-900 rounded-2xl px-4 py-3.5 flex items-center gap-3"
@@ -578,19 +599,20 @@ export default function MapView() {
       {/* ── BAR DETAIL SHEET ── */}
       {selectedBar && (
         <div
-          className="absolute bottom-0 left-0 right-0 z-30 bg-white"
+          className="absolute bottom-0 left-0 right-0 z-30 bg-white sheet-slide-up flex flex-col"
           style={{
             borderRadius: '20px 20px 0 0',
-            paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+            maxHeight: '80dvh',
             boxShadow: '0 -2px 32px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.04)',
           }}
         >
           {/* Handle */}
-          <div className="flex justify-center pt-3 pb-1">
+          <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
             <div className="w-8 h-[3px] rounded-full bg-gray-200" />
           </div>
 
-          <div className="px-5 pt-3 pb-5">
+          {/* ── Scrollable info zone ── */}
+          <div className="px-5 pt-2 pb-3 overflow-y-auto flex-1 min-h-0">
             {/* Name row */}
             <div className="flex items-start gap-2 mb-1">
               <div className="flex-1 min-w-0">
@@ -604,53 +626,43 @@ export default function MapView() {
 
             {/* Address */}
             {selectedBar.address && (
-              <p className="text-[13px] text-gray-400 mb-4 leading-snug">{selectedBar.address}</p>
+              <p className="text-[13px] text-gray-400 mb-2 leading-snug">{selectedBar.address}</p>
+            )}
+
+            {/* Terrace badge */}
+            {selectedBar.has_terrace === true && (
+              <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-green-700 bg-green-50 px-2.5 py-1 rounded-full mb-3">
+                🌿 {selectedBar.terrace_grande ? 'Grande terrasse' : 'Terrasse'}
+              </span>
+            )}
+            {selectedBar.has_terrace === false && (
+              <span className="inline-flex items-center gap-1 text-[12px] font-medium text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full mb-3">
+                Pas de terrasse
+              </span>
             )}
 
             {!showPriceForm ? (
-              <>
-                {/* Price + date */}
-                <div className="flex items-end gap-2.5 mb-5">
-                  <span
-                    className="text-[44px] font-black leading-none tabular-nums"
-                    style={{ color: selectedBar.beer_price === 0 ? '#d1d5db' : getPriceColor(selectedBar.beer_price) }}
-                  >
-                    {selectedBar.beer_price === 0 ? '—' : `${selectedBar.beer_price.toFixed(2)}€`}
-                  </span>
-                  <div className="pb-1.5">
-                    <p className="text-[12px] text-gray-400 font-medium leading-tight">
-                      {selectedBar.beer_price === 0 ? 'Prix inconnu' : 'la pinte'}
+              /* Price + date */
+              <div className="flex items-end gap-2.5">
+                <span
+                  className="text-[44px] font-black leading-none tabular-nums"
+                  style={{ color: selectedBar.beer_price === 0 ? '#d1d5db' : getPriceColor(selectedBar.beer_price) }}
+                >
+                  {selectedBar.beer_price === 0 ? '—' : `${selectedBar.beer_price.toFixed(2)}€`}
+                </span>
+                <div className="pb-1.5">
+                  <p className="text-[12px] text-gray-400 font-medium leading-tight">
+                    {selectedBar.beer_price === 0 ? 'Prix inconnu' : 'la pinte'}
+                  </p>
+                  {selectedBar.beer_price > 0 && (
+                    <p className="text-[11px] text-gray-300 leading-tight">
+                      {new Date(selectedBar.last_updated).toLocaleDateString('fr-FR')}
                     </p>
-                    {selectedBar.beer_price > 0 && (
-                      <p className="text-[11px] text-gray-300 leading-tight">
-                        {new Date(selectedBar.last_updated).toLocaleDateString('fr-FR')}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Buttons */}
-                <div className="flex gap-2.5">
-                  {userLocation && (
-                    <button
-                      onClick={() => showRoute(selectedBar.latitude, selectedBar.longitude, selectedBar.name)}
-                      className="flex-1 flex items-center justify-center gap-2 bg-gray-900 text-white rounded-xl py-3.5 font-semibold text-[14px] active:bg-gray-700 transition"
-                    >
-                      Y aller
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                      </svg>
-                    </button>
                   )}
-                  <button
-                    onClick={() => setShowPriceForm(true)}
-                    className={`flex items-center justify-center rounded-xl py-3.5 font-semibold text-[14px] bg-gray-100 text-gray-700 active:bg-gray-200 transition ${userLocation ? 'px-4' : 'flex-1'}`}
-                  >
-                    Signaler un prix
-                  </button>
                 </div>
-              </>
+              </div>
             ) : (
+              /* Price form fields */
               <div className="space-y-3">
                 <p className="text-[14px] font-semibold text-gray-800">Combien coûte la pinte ?</p>
                 <div className="relative">
@@ -665,17 +677,46 @@ export default function MapView() {
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[18px] font-bold text-gray-400">€</span>
                 </div>
                 {message && <p className="text-sm text-center font-medium text-green-600">{message}</p>}
-                <div className="flex gap-2.5">
+              </div>
+            )}
+          </div>
+
+          {/* ── Buttons — toujours visibles, jamais dans le scroll ── */}
+          <div
+            className="px-5 pt-2 flex-shrink-0"
+            style={{ paddingBottom: 'max(20px, env(safe-area-inset-bottom, 20px))' }}
+          >
+            {!showPriceForm ? (
+              <div className="flex gap-2.5">
+                {userLocation && (
                   <button
-                    onClick={() => setShowPriceForm(false)}
-                    className="flex-1 bg-gray-100 text-gray-700 rounded-xl py-3.5 font-semibold text-[14px] active:bg-gray-200"
-                  >Annuler</button>
-                  <button
-                    onClick={submitPrice}
-                    disabled={loading}
-                    className="flex-1 bg-gray-900 text-white rounded-xl py-3.5 font-semibold text-[14px] active:bg-gray-700 disabled:opacity-40"
-                  >{loading ? 'Envoi…' : 'Confirmer'}</button>
-                </div>
+                    onClick={() => showRoute(selectedBar.latitude, selectedBar.longitude, selectedBar.name)}
+                    className="flex-1 flex items-center justify-center gap-2 bg-gray-900 text-white rounded-xl py-3.5 font-semibold text-[14px] active:bg-gray-700 transition"
+                  >
+                    Y aller
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                    </svg>
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowPriceForm(true)}
+                  className={`flex items-center justify-center rounded-xl py-3.5 font-semibold text-[14px] bg-gray-100 text-gray-700 active:bg-gray-200 transition ${userLocation ? 'px-4' : 'flex-1'}`}
+                >
+                  Signaler un prix
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2.5">
+                <button
+                  onClick={() => setShowPriceForm(false)}
+                  className="flex-1 bg-gray-100 text-gray-700 rounded-xl py-3.5 font-semibold text-[14px] active:bg-gray-200"
+                >Annuler</button>
+                <button
+                  onClick={submitPrice}
+                  disabled={loading}
+                  className="flex-1 bg-gray-900 text-white rounded-xl py-3.5 font-semibold text-[14px] active:bg-gray-700 disabled:opacity-40"
+                >{loading ? 'Envoi…' : 'Confirmer'}</button>
               </div>
             )}
           </div>
