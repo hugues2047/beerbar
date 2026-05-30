@@ -16,9 +16,9 @@ function getDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: numbe
 
 function getPriceColor(price: number): string {
   if (price === 0) return '#9CA3AF';
-  if (price < 5)   return '#22C55E';
-  if (price <= 8)  return '#F97316';
-  return '#EF4444';
+  if (price <= 5)  return '#22C55E';   // ≤ 5 € → vert
+  if (price < 7)   return '#F97316';   // 5–7 € → orange
+  return '#EF4444';                     // ≥ 7 € → rouge
 }
 
 type SuggestionPriceMax = 4 | 5 | null;
@@ -39,9 +39,11 @@ export default function MapView() {
   const [selectedBar, setSelectedBar] = useState<Bar | null>(null);
   const [showPriceForm, setShowPriceForm] = useState(false);
   const [priceInput, setPriceInput] = useState('');
+  const [priceConfirmed, setPriceConfirmed] = useState(false);   // double-confirm on suspicious price
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);           // collapsible search bar
   const [priceFilter, setPriceFilter] = useState<'all' | 'under4' | 'under5' | 'under6'>('all');
 
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -66,9 +68,26 @@ export default function MapView() {
 
   const isFiltered = priceFilter !== 'all' || !!searchQuery || terraceFilter;
 
-  // Load all bars from Supabase
+  // Load all bars — cache localStorage 30 min pour réduire le bandwidth Supabase
   useEffect(() => {
     async function loadBars() {
+      const CACHE_KEY = 'pbm_bars_v2';
+      const CACHE_TTL = 30 * 60 * 1000; // 30 min
+
+      // Essai du cache local
+      try {
+        const raw = localStorage.getItem(CACHE_KEY);
+        if (raw) {
+          const { ts, data } = JSON.parse(raw);
+          if (Date.now() - ts < CACHE_TTL && Array.isArray(data) && data.length > 100) {
+            setBars(data as Bar[]);
+            setBarsLoading(false);
+            return;
+          }
+        }
+      } catch {}
+
+      // Fetch Supabase
       const { count } = await supabase
         .from('bars')
         .select('*', { count: 'exact', head: true })
@@ -79,13 +98,19 @@ export default function MapView() {
       const requests = Array.from({ length: numBatches }, (_, i) =>
         supabase
           .from('bars')
-          .select('id,name,address,latitude,longitude,beer_price,phone,last_updated,has_terrace,terrace_grande')
+          .select('id,name,address,latitude,longitude,beer_price,price_source,phone,last_updated,has_terrace,terrace_grande')
           .or('serves_beer.eq.true,serves_beer.is.null')
           .range(i * batchSize, (i + 1) * batchSize - 1)
       );
       const results = await Promise.all(requests);
-      setBars(results.flatMap(r => r.data || []) as Bar[]);
+      const allBars = results.flatMap(r => r.data || []) as Bar[];
+      setBars(allBars);
       setBarsLoading(false);
+
+      // Mise en cache
+      try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: allBars }));
+      } catch {}
     }
     loadBars();
   }, []);
@@ -132,8 +157,8 @@ export default function MapView() {
 
     // Enlarge pins and add stroke when a filter is active so they stand out
     if (map.current.getLayer('bars-circle')) {
-      const r = isFiltered ? 10 : 7;
-      const ro = isFiltered ? 13 : 9;
+      const r  = isFiltered ? 9  : 6;
+      const ro = isFiltered ? 12 : 8;
       map.current.setPaintProperty('bars-circle', 'circle-radius', r);
       map.current.setPaintProperty('bars-circle', 'circle-stroke-width', isFiltered ? 2.5 : 0);
       map.current.setPaintProperty('bars-circle', 'circle-stroke-color', '#ffffff');
@@ -170,33 +195,52 @@ export default function MapView() {
         type: 'geojson',
         data: geojson,
         cluster: true,
-        clusterMaxZoom: 14,
-        clusterRadius: 40,
+        clusterMaxZoom: 12,   // bars individuels visibles dès zoom 13 (vue arrondissement)
+        clusterRadius: 30,
+        clusterProperties: {
+          // prix le moins cher du cluster (999 = aucun prix connu)
+          min_price: ['min', ['case', ['>', ['get', 'beer_price'], 0], ['get', 'beer_price'], 999]],
+        },
       });
 
-      // Cluster bubble — dark pill
+      // Cluster bubble — coloré selon le prix le moins cher
       map.current!.addLayer({
         id: 'clusters',
         type: 'circle',
         source: 'bars',
         filter: ['has', 'point_count'],
         paint: {
-          'circle-color': '#1a1a1a',
-          'circle-radius': ['step', ['get', 'point_count'], 16, 20, 22, 100, 28],
+          'circle-color': [
+            'case',
+            ['>=', ['get', 'min_price'], 999], '#374151',          // aucun prix → gris foncé
+            ['<=', ['get', 'min_price'], 5],   '#15803d',          // ≤5€ → vert foncé
+            ['<',  ['get', 'min_price'], 7],   '#c2410c',          // 5–7€ → orange foncé
+            '#991b1b',                                              // ≥7€ → rouge foncé
+          ] as unknown as string,
+          'circle-radius': ['step', ['get', 'point_count'], 16, 20, 22, 100, 28] as unknown as number,
           'circle-opacity': 0.92,
         },
       });
 
-      // Cluster count label
+      // Cluster count label + min price
       map.current!.addLayer({
         id: 'cluster-count',
         type: 'symbol',
         source: 'bars',
         filter: ['has', 'point_count'],
         layout: {
-          'text-field': '{point_count_abbreviated}',
-          'text-size': 12,
+          'text-field': [
+            'concat',
+            ['to-string', ['get', 'point_count_abbreviated']],
+            ['case',
+              ['<', ['get', 'min_price'], 50],
+              ['concat', '\n', ['number-format', ['get', 'min_price'], { 'max-fraction-digits': 2 }], '€'],
+              '',
+            ],
+          ] as unknown as string,
+          'text-size': 11,
           'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+          'text-line-height': 1.3,
         },
         paint: { 'text-color': '#ffffff' },
       });
@@ -208,9 +252,9 @@ export default function MapView() {
         source: 'bars',
         filter: ['!', ['has', 'point_count']],
         paint: {
-          'circle-radius': 10,
+          'circle-radius': 8,
           'circle-color': '#ffffff',
-          'circle-opacity': 1,
+          'circle-opacity': 0.9,
           'circle-blur': 0,
         },
       });
@@ -222,16 +266,29 @@ export default function MapView() {
         source: 'bars',
         filter: ['!', ['has', 'point_count']],
         paint: {
-          'circle-radius': 7,
+          'circle-radius': 6,
           'circle-color': [
             'case',
             ['==', ['get', 'beer_price'], 0], '#9CA3AF',
-            ['<',  ['get', 'beer_price'], 5], '#22C55E',
-            ['<=', ['get', 'beer_price'], 8], '#F97316',
+            ['<=', ['get', 'beer_price'], 5], '#22C55E',
+            ['<',  ['get', 'beer_price'], 7], '#F97316',
             '#EF4444',
           ],
           'circle-stroke-width': 0,
           'circle-stroke-color': '#ffffff',
+        },
+      });
+
+      // Invisible hit-area — bigger click target than the visual dot
+      map.current!.addLayer({
+        id: 'bars-hitarea',
+        type: 'circle',
+        source: 'bars',
+        filter: ['!', ['has', 'point_count']],
+        paint: {
+          'circle-radius': 22,
+          'circle-opacity': 0,
+          'circle-stroke-width': 0,
         },
       });
 
@@ -247,32 +304,43 @@ export default function MapView() {
           });
       });
 
-      // Clicking a dot opens the info panel
-      map.current!.on('click', 'bars-circle', e => {
+      // Clicking a dot (via hitarea = bigger target) opens the info panel
+      map.current!.on('click', 'bars-hitarea', e => {
         if (!e.features?.[0]?.properties) return;
         const p = e.features[0].properties;
         setSelectedBar({
           id: p.id, name: p.name, address: p.address,
           latitude: p.latitude, longitude: p.longitude,
-          beer_price: p.beer_price, phone: p.phone,
-          submitted_by: null, last_updated: p.last_updated,
+          beer_price: p.beer_price, price_source: p.price_source ?? null,
+          phone: p.phone, submitted_by: null, last_updated: p.last_updated,
           serves_beer: p.serves_beer ?? null, amenity_type: p.amenity_type ?? null,
           has_terrace: p.has_terrace ?? null, terrace_grande: p.terrace_grande ?? null,
         });
         setShowPriceForm(false);
         setPriceInput('');
+        setPriceConfirmed(false);
         setMessage('');
       });
 
-      ['bars-circle', 'clusters'].forEach(layer => {
+      ['bars-hitarea', 'clusters'].forEach(layer => {
         map.current!.on('mouseenter', layer, () => { map.current!.getCanvas().style.cursor = 'pointer'; });
         map.current!.on('mouseleave', layer, () => { map.current!.getCanvas().style.cursor = ''; });
       });
 
-      // Click on empty map space → dismiss suggestion card
+      // Click on empty map space → dismiss suggestion card / close bar sheet
       map.current!.on('click', e => {
-        const hit = map.current!.queryRenderedFeatures(e.point, { layers: ['bars-circle', 'clusters'] });
-        if (hit.length === 0) setSuggestionDismissed(true);
+        const hit = map.current!.queryRenderedFeatures(e.point, { layers: ['bars-hitarea', 'clusters'] });
+        if (hit.length === 0) {
+          setSuggestionDismissed(true);
+          setSelectedBar(null);
+          setShowPriceForm(false);
+          setMessage('');
+        }
+      });
+
+      // Zoom tracking — reset dismissed state when user zooms back in to street level
+      map.current!.on('zoomend', () => {
+        if (map.current!.getZoom() >= 13) setSuggestionDismissed(false);
       });
     }
 
@@ -371,18 +439,67 @@ export default function MapView() {
 
   async function submitPrice() {
     if (!selectedBar || !priceInput) return;
-    const price = parseFloat(priceInput);
-    if (isNaN(price) || price <= 0) { setMessage('Entre un prix valide (ex: 5.50)'); return; }
+    const price = parseFloat(priceInput.replace(',', '.'));
+
+    // ── Validation réaliste (Paris) ────────────────────────────────────────
+    // Seuils dérivés statistiquement des données réelles :
+    //   hard max = Q3 + 1.5×IQR ≈ 7 + 2.25 = 9.25 → arrondi 9.50€
+    //   soft warn = Q3 + 0.5×IQR ≈ 7 + 0.75 = 7.75 → arrondi 8.00€
+    const HARD_MAX  = 16.00;
+    const SOFT_WARN = 10.00;
+
+    if (isNaN(price) || price < 2.5 || price > HARD_MAX) {
+      setMessage(`Prix hors fourchette Paris (2,50 € – ${HARD_MAX.toFixed(2)} €)`);
+      return;
+    }
+    const rounded = Math.round(price * 100) / 100;
+
+    // ── Double confirmation si prix élevé ou écart important ──────────────
+    if (!priceConfirmed) {
+      // 1. Prix élevé pour Paris
+      if (rounded >= SOFT_WARN) {
+        setMessage(`${rounded.toFixed(2)} €, c'est cher pour Paris — tu confirmes ?`);
+        setPriceConfirmed(true);
+        return;
+      }
+      // 2. Grand écart avec le prix existant
+      if (selectedBar.beer_price > 0) {
+        const diff = Math.abs(rounded - selectedBar.beer_price);
+        const pct  = diff / selectedBar.beer_price;
+        if (diff > 1.5 && pct > 0.30) {
+          setMessage(`Prix actuel : ${selectedBar.beer_price.toFixed(2)} €. Confirme ${rounded.toFixed(2)} € ?`);
+          setPriceConfirmed(true);
+          return;
+        }
+      }
+    }
+
+    // ── Calcul du prix final ───────────────────────────────────────────────
+    // Si un prix utilisateur existe déjà → moyenne pondérée (lisse les erreurs)
+    // Si la source est google/mgb → on écrase (source humaine prime)
+    let finalPrice = rounded;
+    if (selectedBar.beer_price > 0 && selectedBar.price_source === 'user') {
+      finalPrice = Math.round((selectedBar.beer_price + rounded) / 2 * 100) / 100;
+    }
+
     setLoading(true);
     const updatedAt = new Date().toISOString();
     const { error } = await supabase
-      .from('bars').update({ beer_price: price, last_updated: updatedAt }).eq('id', selectedBar.id);
+      .from('bars')
+      .update({ beer_price: finalPrice, last_updated: updatedAt, price_source: 'user' })
+      .eq('id', selectedBar.id);
+
     if (error) {
       setMessage('Erreur lors de la soumission.');
     } else {
-      setMessage('Prix soumis, merci !');
-      setBars(prev => prev.map(b => b.id === selectedBar.id ? { ...b, beer_price: price, last_updated: updatedAt } : b));
-      setTimeout(() => { setSelectedBar(null); setShowPriceForm(false); setPriceInput(''); setMessage(''); }, 1500);
+      setMessage('Merci ! Prix enregistré 🍺');
+      setBars(prev => prev.map(b =>
+        b.id === selectedBar.id ? { ...b, beer_price: finalPrice, last_updated: updatedAt, price_source: 'user' } : b
+      ));
+      setTimeout(() => {
+        setSelectedBar(null); setShowPriceForm(false);
+        setPriceInput(''); setPriceConfirmed(false); setMessage('');
+      }, 1600);
     }
     setLoading(false);
   }
@@ -392,6 +509,7 @@ export default function MapView() {
     setShowPriceForm(false);
     setMessage('');
     setPriceInput('');
+    setPriceConfirmed(false);
   }
 
   return (
@@ -411,76 +529,97 @@ export default function MapView() {
         </div>
       )}
 
-      {/* ── TOP CHROME ── */}
+      {/* ── TOP CHROME ── compact single row, search expands on demand ── */}
       <div
         className="absolute top-0 left-0 right-0 z-10 pointer-events-none"
         style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
       >
-        <div className="px-3 pt-3 flex flex-col gap-2 pointer-events-auto">
+        <div className="px-3 pt-2.5 flex flex-col gap-1.5 pointer-events-auto">
 
-          {/* Search bar */}
-          <div className="flex gap-2">
+          {/* Search input — only visible when open */}
+          {searchOpen && (
             <div
-              className="flex-1 flex items-center gap-2.5 bg-white/95 rounded-2xl px-3.5 py-3 backdrop-blur-sm"
-              style={{ marginRight: '0', boxShadow: '0 1px 12px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.04)' }}
+              className="flex items-center gap-2.5 bg-white/97 rounded-2xl px-3.5 py-2.5 backdrop-blur-sm"
+              style={{ boxShadow: '0 1px 12px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.05)' }}
             >
               <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
               </svg>
               <input
                 type="text"
-                placeholder="Rechercher un bar…"
+                placeholder="Nom du bar…"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="flex-1 text-sm font-medium text-gray-900 placeholder-gray-400 focus:outline-none bg-transparent min-w-0 leading-none"
+                autoFocus
+                className="flex-1 text-[14px] font-medium text-gray-900 placeholder-gray-400 focus:outline-none bg-transparent min-w-0"
               />
-              {searchQuery && (
-                <button onClick={() => setSearchQuery('')} className="w-5 h-5 flex items-center justify-center rounded-full bg-gray-200 text-gray-500 text-[10px] flex-shrink-0">✕</button>
-              )}
+              <button
+                onClick={() => { setSearchOpen(false); setSearchQuery(''); }}
+                className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 text-[11px] flex-shrink-0"
+              >✕</button>
             </div>
-            {/* Empty space for mapbox geolocate btn */}
-            <div className="w-10 flex-shrink-0" />
-          </div>
+          )}
 
-          {/* Filter chips */}
-          <div className="flex gap-1.5 overflow-x-auto scrollbar-hide">
+          {/* Always-visible row: search toggle + filter chips + legend + geolocate spacer */}
+          <div className="flex gap-1.5 items-center overflow-x-auto scrollbar-hide">
+
+            {/* 🔍 Search toggle — icon when closed, active when query set */}
+            <button
+              onClick={() => setSearchOpen(v => !v)}
+              className={`flex-shrink-0 flex items-center justify-center rounded-full w-8 h-8 transition-all active:scale-95 ${
+                searchQuery
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-white/90 text-gray-500 backdrop-blur-sm'
+              }`}
+              style={{ boxShadow: searchQuery ? 'none' : '0 1px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)' }}
+              title="Rechercher"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+              </svg>
+            </button>
+
+            {/* Price chips */}
             {([
-              { key: 'under4', label: '< 4 €' },
-              { key: 'under5', label: '< 5 €' },
-              { key: 'under6', label: '< 6 €' },
+              { key: 'under4', label: '< 4€' },
+              { key: 'under5', label: '< 5€' },
+              { key: 'under6', label: '< 6€' },
             ] as const).map(({ key, label }) => (
               <button
                 key={key}
                 onClick={() => setPriceFilter(priceFilter === key ? 'all' : key)}
-                className={`flex-shrink-0 text-xs font-semibold px-3.5 py-1.5 rounded-full transition-all active:scale-95 ${
-                  priceFilter === key
-                    ? 'bg-gray-900 text-white'
-                    : 'bg-white/90 text-gray-700 backdrop-blur-sm'
+                className={`flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95 ${
+                  priceFilter === key ? 'bg-gray-900 text-white' : 'bg-white/90 text-gray-700 backdrop-blur-sm'
                 }`}
                 style={{ boxShadow: priceFilter === key ? 'none' : '0 1px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)' }}
               >
                 {label}
               </button>
             ))}
+
+            {/* Terrace chip */}
             <button
               onClick={() => setTerraceFilter(!terraceFilter)}
-              className={`flex-shrink-0 text-xs font-semibold px-3.5 py-1.5 rounded-full transition-all active:scale-95 ${
-                terraceFilter
-                  ? 'bg-gray-900 text-white'
-                  : 'bg-white/90 text-gray-700 backdrop-blur-sm'
+              className={`flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95 ${
+                terraceFilter ? 'bg-gray-900 text-white' : 'bg-white/90 text-gray-700 backdrop-blur-sm'
               }`}
               style={{ boxShadow: terraceFilter ? 'none' : '0 1px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)' }}
             >
-              🌿 Terrasse
+              🌿
             </button>
 
-            {/* Color legend dots — inline with chips */}
-            <div className="ml-auto flex items-center gap-2 bg-white/90 backdrop-blur-sm rounded-full px-3 py-1.5 flex-shrink-0"
+            {/* Color legend */}
+            <div className="ml-auto flex items-center gap-1 bg-white/90 backdrop-blur-sm rounded-full px-2.5 py-1.5 flex-shrink-0"
                  style={{ boxShadow: '0 1px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)' }}>
-              <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" title="< 5€" />
-              <span className="w-2 h-2 rounded-full bg-orange-500 flex-shrink-0" title="5–8€" />
-              <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" title="> 8€" />
+              <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
+              <span className="text-[10px] font-semibold text-gray-500">5€</span>
+              <span className="w-2 h-2 rounded-full bg-orange-500 flex-shrink-0 ml-1" />
+              <span className="text-[10px] font-semibold text-gray-500">7€</span>
+              <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0 ml-1" />
             </div>
+
+            {/* Space for Mapbox geolocate control (top-right, overlaps here) */}
+            <div className="w-9 flex-shrink-0" />
           </div>
         </div>
       </div>
@@ -519,7 +658,7 @@ export default function MapView() {
                   )}
                 </div>
                 <div className="flex-shrink-0 text-right">
-                  <span className="text-[28px] font-black tabular-nums leading-none" style={{ color: '#16a34a' }}>
+                  <span className="text-[28px] font-black tabular-nums leading-none" style={{ color: getPriceColor(suggestion.beer_price) }}>
                     {suggestion.beer_price.toFixed(2)}€
                   </span>
                 </div>
@@ -564,7 +703,7 @@ export default function MapView() {
           style={{ bottom: 'calc(env(safe-area-inset-bottom, 16px) + 16px)', boxShadow: '0 2px 16px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04)' }}
         >
           <span className="text-sm">🍺</span>
-          <span className="text-[13px] font-bold tabular-nums" style={{ color: '#16a34a' }}>{suggestion.beer_price.toFixed(2)}€</span>
+          <span className="text-[13px] font-bold tabular-nums" style={{ color: getPriceColor(suggestion.beer_price) }}>{suggestion.beer_price.toFixed(2)}€</span>
         </button>
       )}
 
@@ -602,7 +741,8 @@ export default function MapView() {
           className="absolute bottom-0 left-0 right-0 z-30 bg-white sheet-slide-up flex flex-col"
           style={{
             borderRadius: '20px 20px 0 0',
-            maxHeight: '80dvh',
+            // Never taller than available space below the top chrome (~60px) + safe area
+            maxHeight: 'calc(100dvh - env(safe-area-inset-top, 0px) - 60px)',
             boxShadow: '0 -2px 32px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.04)',
           }}
         >
@@ -611,8 +751,8 @@ export default function MapView() {
             <div className="w-8 h-[3px] rounded-full bg-gray-200" />
           </div>
 
-          {/* ── Scrollable info zone ── */}
-          <div className="px-5 pt-2 pb-3 overflow-y-auto flex-1 min-h-0">
+          {/* ── Scrollable info zone — bottom padding accounts for floating CTA ── */}
+          <div className="px-5 pt-2 overflow-y-auto flex-1 min-h-0" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 84px)' }}>
             {/* Name row */}
             <div className="flex items-start gap-2 mb-1">
               <div className="flex-1 min-w-0">
@@ -680,46 +820,55 @@ export default function MapView() {
               </div>
             )}
           </div>
+        </div>
+      )}
 
-          {/* ── Buttons — toujours visibles, jamais dans le scroll ── */}
-          <div
-            className="px-5 pt-2 flex-shrink-0"
-            style={{ paddingBottom: 'max(20px, env(safe-area-inset-bottom, 20px))' }}
-          >
-            {!showPriceForm ? (
-              <div className="flex gap-2.5">
-                {userLocation && (
-                  <button
-                    onClick={() => showRoute(selectedBar.latitude, selectedBar.longitude, selectedBar.name)}
-                    className="flex-1 flex items-center justify-center gap-2 bg-gray-900 text-white rounded-xl py-3.5 font-semibold text-[14px] active:bg-gray-700 transition"
-                  >
-                    Y aller
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                    </svg>
-                  </button>
-                )}
+      {/* ── FLOATING CTA — toujours visible, hors du scroll de la fiche ── */}
+      {selectedBar && (
+        <div
+          className="absolute left-0 right-0 z-40 px-5"
+          style={{ bottom: 'max(20px, env(safe-area-inset-bottom, 20px))' }}
+        >
+          {!showPriceForm ? (
+            <div className="flex flex-col gap-2">
+              {/* Y aller — CTA principal, pleine largeur */}
+              {userLocation && (
                 <button
-                  onClick={() => setShowPriceForm(true)}
-                  className={`flex items-center justify-center rounded-xl py-3.5 font-semibold text-[14px] bg-gray-100 text-gray-700 active:bg-gray-200 transition ${userLocation ? 'px-4' : 'flex-1'}`}
+                  onClick={() => showRoute(selectedBar.latitude, selectedBar.longitude, selectedBar.name)}
+                  className="w-full flex items-center justify-center gap-2.5 bg-gray-900 text-white rounded-2xl py-4 font-bold text-[16px] active:bg-gray-700 transition"
+                  style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.28)' }}
                 >
-                  Signaler un prix
+                  Y aller
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                  </svg>
                 </button>
-              </div>
-            ) : (
+              )}
+              {/* Suggérer — action secondaire, discrète */}
+              <button
+                onClick={() => { setShowPriceForm(true); setPriceConfirmed(false); setMessage(''); }}
+                className="text-center text-[12px] font-medium text-gray-400 py-1 active:text-gray-600 transition"
+              >
+                {selectedBar.beer_price > 0 ? 'Signaler un prix incorrect' : 'Suggérer un prix'}
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
               <div className="flex gap-2.5">
                 <button
-                  onClick={() => setShowPriceForm(false)}
-                  className="flex-1 bg-gray-100 text-gray-700 rounded-xl py-3.5 font-semibold text-[14px] active:bg-gray-200"
+                  onClick={() => { setShowPriceForm(false); setPriceConfirmed(false); setMessage(''); }}
+                  className="flex-1 bg-white text-gray-700 rounded-2xl py-3.5 font-semibold text-[14px] active:bg-gray-100"
+                  style={{ boxShadow: '0 2px 12px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.06)' }}
                 >Annuler</button>
                 <button
                   onClick={submitPrice}
                   disabled={loading}
-                  className="flex-1 bg-gray-900 text-white rounded-xl py-3.5 font-semibold text-[14px] active:bg-gray-700 disabled:opacity-40"
-                >{loading ? 'Envoi…' : 'Confirmer'}</button>
+                  className="flex-1 bg-gray-900 text-white rounded-2xl py-3.5 font-semibold text-[14px] active:bg-gray-700 disabled:opacity-40"
+                  style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.25)' }}
+                >{loading ? 'Envoi…' : priceConfirmed ? 'Oui, confirmer' : 'Envoyer'}</button>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -15,9 +15,12 @@ export type Bar = {
   latitude: number;
   longitude: number;
   beer_price: number;
+  price_source: string | null;
   phone: string | null;
   submitted_by: string | null;
   last_updated: string;
   serves_beer: boolean | null;
   amenity_type: string | null;
+  has_terrace: boolean | null;
+  terrace_grande: boolean | null;
 };
