@@ -8,6 +8,11 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // This is the shape of a bar record in our database
+export type HoursPeriod = {
+  open:  { day: number; hour: number; minute: number };
+  close?: { day: number; hour: number; minute: number };
+};
+
 export type Bar = {
   id: string;
   name: string;
@@ -23,4 +28,8 @@ export type Bar = {
   amenity_type: string | null;
   has_terrace: boolean | null;
   terrace_grande: boolean | null;
+  /** Google regularOpeningHours.periods — null = not yet fetched */
+  opening_hours: HoursPeriod[] | null;
+  /** Max closing hour in 24+ notation (26 = 2 am, 29 = 5 am). null = unknown */
+  close_hour: number | null;
 };

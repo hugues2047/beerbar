@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { supabase, type Bar } from '@/lib/supabase';
+import { supabase, type Bar, type HoursPeriod } from '@/lib/supabase';
 
 function getDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000;
@@ -22,6 +22,35 @@ function getPriceColor(price: number): string {
 }
 
 type SuggestionPriceMax = 4 | 5 | null;
+type LateFilter = 'none' | '2h' | '5h';
+
+/** Return today's opening hours as a human-readable string, e.g. "18h–2h+" */
+function getTodayHours(periods: HoursPeriod[] | null): string | null {
+  if (!periods?.length) return null;
+  const today = new Date().getDay(); // 0=Sun … 6=Sat
+  const p = periods.find(p => p.open.day === today);
+  if (!p) return 'Fermé aujourd\'hui';
+  if (!p.close) return 'Ouvert 24h/24';
+  const fmt = (h: number, m: number) => `${h}h${m ? m.toString().padStart(2, '0') : ''}`;
+  const suffix = p.close.hour < 8 ? '+' : ''; // + = closes next calendar day
+  return `${fmt(p.open.hour, p.open.minute)}–${fmt(p.close.hour, p.close.minute)}${suffix}`;
+}
+
+/** Is the bar currently open based on its periods? */
+function isOpenNow(periods: HoursPeriod[] | null): boolean | null {
+  if (!periods?.length) return null;
+  const now  = new Date();
+  const day  = now.getDay();
+  const mins = now.getHours() * 60 + now.getMinutes();
+  for (const p of periods) {
+    const openMins  = p.open.day  * 1440 + p.open.hour  * 60 + (p.open.minute  ?? 0);
+    const closeMins = p.close ? (p.close.day * 1440 + p.close.hour * 60 + (p.close.minute ?? 0)) : null;
+    const nowAbs    = day * 1440 + mins;
+    if (closeMins === null) return true; // 24h
+    if (nowAbs >= openMins && nowAbs < closeMins) return true;
+  }
+  return false;
+}
 
 type RouteInfo = {
   minutes: number;
@@ -53,20 +82,24 @@ export default function MapView() {
 
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
   const [terraceFilter, setTerraceFilter] = useState(false);
+  const [lateFilter, setLateFilter] = useState<LateFilter>('none');
   const [barsLoading, setBarsLoading] = useState(true);
 
   const filteredBars = useMemo(() => {
     return bars.filter(bar => {
       if (searchQuery && !bar.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       if (terraceFilter && !bar.has_terrace) return false;
-      if (priceFilter === 'under4') return bar.beer_price > 0 && bar.beer_price < 4;
-      if (priceFilter === 'under5') return bar.beer_price > 0 && bar.beer_price < 5;
-      if (priceFilter === 'under6') return bar.beer_price > 0 && bar.beer_price < 6;
+      if (priceFilter === 'under4') { if (!(bar.beer_price > 0 && bar.beer_price < 4)) return false; }
+      if (priceFilter === 'under5') { if (!(bar.beer_price > 0 && bar.beer_price < 5)) return false; }
+      if (priceFilter === 'under6') { if (!(bar.beer_price > 0 && bar.beer_price < 6)) return false; }
+      // 26 = 2am in 24+ notation, 29 = 5am
+      if (lateFilter === '2h' && (bar.close_hour === null || bar.close_hour < 26)) return false;
+      if (lateFilter === '5h' && (bar.close_hour === null || bar.close_hour < 29)) return false;
       return true;
     });
-  }, [bars, searchQuery, priceFilter, terraceFilter]);
+  }, [bars, searchQuery, priceFilter, terraceFilter, lateFilter]);
 
-  const isFiltered = priceFilter !== 'all' || !!searchQuery || terraceFilter;
+  const isFiltered = priceFilter !== 'all' || !!searchQuery || terraceFilter || lateFilter !== 'none';
 
   // Load all bars — cache localStorage 30 min pour réduire le bandwidth Supabase
   useEffect(() => {
@@ -98,7 +131,7 @@ export default function MapView() {
       const requests = Array.from({ length: numBatches }, (_, i) =>
         supabase
           .from('bars')
-          .select('id,name,address,latitude,longitude,beer_price,price_source,phone,last_updated,has_terrace,terrace_grande')
+          .select('id,name,address,latitude,longitude,beer_price,price_source,phone,last_updated,has_terrace,terrace_grande,opening_hours,close_hour')
           .or('serves_beer.eq.true,serves_beer.is.null')
           .range(i * batchSize, (i + 1) * batchSize - 1)
       );
@@ -315,6 +348,8 @@ export default function MapView() {
           phone: p.phone, submitted_by: null, last_updated: p.last_updated,
           serves_beer: p.serves_beer ?? null, amenity_type: p.amenity_type ?? null,
           has_terrace: p.has_terrace ?? null, terrace_grande: p.terrace_grande ?? null,
+          opening_hours: p.opening_hours ? JSON.parse(p.opening_hours) : null,
+          close_hour: p.close_hour ?? null,
         });
         setShowPriceForm(false);
         setPriceInput('');
@@ -608,6 +643,21 @@ export default function MapView() {
               🌿
             </button>
 
+            {/* Late-close chips */}
+            {(['2h', '5h'] as const).map(val => (
+              <button
+                key={val}
+                onClick={() => setLateFilter(lateFilter === val ? 'none' : val)}
+                className={`flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95 ${
+                  lateFilter === val ? 'bg-gray-900 text-white' : 'bg-white/90 text-gray-700 backdrop-blur-sm'
+                }`}
+                style={{ boxShadow: lateFilter === val ? 'none' : '0 1px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)' }}
+                title={val === '2h' ? 'Ouvert après 2h du matin' : 'Ouvert après 5h du matin'}
+              >
+                🌙{val}
+              </button>
+            ))}
+
             {/* Color legend */}
             <div className="ml-auto flex items-center gap-1 bg-white/90 backdrop-blur-sm rounded-full px-2.5 py-1.5 flex-shrink-0"
                  style={{ boxShadow: '0 1px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)' }}>
@@ -768,6 +818,21 @@ export default function MapView() {
             {selectedBar.address && (
               <p className="text-[13px] text-gray-400 mb-2 leading-snug">{selectedBar.address}</p>
             )}
+
+            {/* Opening hours */}
+            {selectedBar.opening_hours && (() => {
+              const todayStr = getTodayHours(selectedBar.opening_hours);
+              const open = isOpenNow(selectedBar.opening_hours);
+              return (
+                <div className="flex items-center gap-2 mb-2">
+                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${open ? 'bg-green-500' : open === false ? 'bg-red-400' : 'bg-gray-300'}`} />
+                  <span className="text-[12px] font-medium text-gray-500">
+                    {open === true ? 'Ouvert' : open === false ? 'Fermé' : ''}
+                    {todayStr && <span className="text-gray-400"> · {todayStr}</span>}
+                  </span>
+                </div>
+              );
+            })()}
 
             {/* Terrace badge */}
             {selectedBar.has_terrace === true && (
