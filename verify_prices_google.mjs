@@ -306,16 +306,23 @@ async function passFill() {
       continue;
     }
 
-    const parsed = parsePrice(placeData);
+    const parsed    = parsePrice(placeData);
+    const periods   = placeData.regularOpeningHours?.periods ?? null;
+    const closeHour = computeCloseHour(periods);
+
     if (!parsed) {
-      process.stdout.write('— pas de données prix\n');
+      // No price — but save hours if we got them
+      if (periods !== null) {
+        await supabase.from('bars').update({ opening_hours: periods, close_hour: closeHour }).eq('id', bar.id);
+        const hoursTag = closeHour !== null && closeHour >= 26 ? ` 🌙${closeHour - 24}h+` : '';
+        process.stdout.write(`— no price, hours saved${hoursTag}\n`);
+      } else {
+        process.stdout.write('— pas de données\n');
+      }
       noData++;
       await sleep(150);
       continue;
     }
-
-    const periods    = placeData.regularOpeningHours?.periods ?? null;
-    const closeHour  = computeCloseHour(periods);
 
     const { error } = await supabase.from('bars').update({
       beer_price:    parsed.price,
