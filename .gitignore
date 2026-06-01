@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.vercel
+
+# scraper output
+scrape_results*.csv
+
+# Generated at build time by scripts/generate-bars.mjs — do not commit
+/public/bars.json

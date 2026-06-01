@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState, useMemo } from 'react';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
+import maplibregl from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
 import { supabase, type Bar, type HoursPeriod } from '@/lib/supabase';
 
 function getDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -62,7 +62,7 @@ type RouteInfo = {
 
 export default function MapView() {
   const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<mapboxgl.Map | null>(null);
+  const map = useRef<maplibregl.Map | null>(null);
   const chromeRef = useRef<HTMLDivElement>(null);   // for measuring actual chrome height
 
   const [bars, setBars] = useState<Bar[]>([]);
@@ -130,13 +130,14 @@ export default function MapView() {
 
   const isFiltered = priceFilter !== 'all' || !!searchQuery || terraceFilter || lateFilter !== 'none';
 
-  // Load all bars — cache localStorage 30 min pour réduire le bandwidth Supabase
+  // Load all bars — static JSON servi par CDN Vercel (< 300 ms, 0 coût Supabase)
+  // Re-généré à chaque déploiement via scripts/generate-bars.mjs (prebuild)
   useEffect(() => {
     async function loadBars() {
-      const CACHE_KEY = 'pbm_bars_v2';
-      const CACHE_TTL = 30 * 60 * 1000; // 30 min
+      const CACHE_KEY = 'pbm_bars_v3';   // v3 = static JSON (v2 était Supabase)
+      const CACHE_TTL = 15 * 60 * 1000; // 15 min (données changent seulement au déploiement)
 
-      // Essai du cache local
+      // Cache mémoire localStorage
       try {
         const raw = localStorage.getItem(CACHE_KEY);
         if (raw) {
@@ -149,62 +150,48 @@ export default function MapView() {
         }
       } catch {}
 
-      // Fetch Supabase
-      const { count } = await supabase
-        .from('bars')
-        .select('*', { count: 'exact', head: true })
-        .or('serves_beer.eq.true,serves_beer.is.null');
-      if (!count) return;
-      const batchSize = 1000;
-      const numBatches = Math.ceil(count / batchSize);
-      const requests = Array.from({ length: numBatches }, (_, i) =>
-        supabase
-          .from('bars')
-          .select('id,name,address,latitude,longitude,beer_price,price_source,phone,last_updated,has_terrace,terrace_grande,opening_hours,close_hour')
-          .or('serves_beer.eq.true,serves_beer.is.null')
-          .range(i * batchSize, (i + 1) * batchSize - 1)
-      );
-      const results = await Promise.all(requests);
-      const allBars = results.flatMap(r => r.data || []) as Bar[];
-      setBars(allBars);
-      setBarsLoading(false);
-
-      // Mise en cache
+      // Fetch le fichier statique depuis le CDN
       try {
-        localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: allBars }));
-      } catch {}
+        const res = await fetch('/bars.json');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const allBars: Bar[] = await res.json();
+        setBars(allBars);
+        setBarsLoading(false);
+        // Mise en cache (try/catch au cas où localStorage est plein)
+        try {
+          localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: allBars }));
+        } catch {}
+      } catch (e) {
+        console.error('Failed to load bars.json:', e);
+        setBarsLoading(false);
+      }
     }
     loadBars();
   }, []);
 
-  // Initialize Mapbox map
+  // Initialize MapLibre map (OpenFreeMap — gratuit, aucune clé requise)
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
-    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-    if (!token) { console.error('Mapbox token missing'); return; }
-    mapboxgl.accessToken = token;
-    map.current = new mapboxgl.Map({
+    map.current = new maplibregl.Map({
       container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/light-v11',
+      style: 'https://tiles.openfreemap.org/styles/positron',
       center: [2.3622, 48.8729],
       zoom: 14,
     });
-    map.current.on('error', e => console.error('Mapbox error:', e));
+    map.current.on('error', e => console.error('Map error:', e));
     const isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent);
     // Only show zoom buttons on desktop — mobile uses pinch
-    if (!isMobile) map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
-    const geolocate = new mapboxgl.GeolocateControl({
+    if (!isMobile) map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
+    const geolocate = new maplibregl.GeolocateControl({
       positionOptions: { enableHighAccuracy: true },
       trackUserLocation: true,
-      showUserHeading: true,
     });
     map.current.addControl(geolocate, 'top-right');
     map.current.on('load', () => {
       if (isMobile) geolocate.trigger();
-      // Push Mapbox controls below our top chrome (safe-area + chrome ~56px)
-      // so the geolocate button doesn't overlap the filter chips
+      // Push controls below our top chrome so they ne chevauchent pas les chips
       const topOffset = `calc(env(safe-area-inset-top, 0px) + 56px)`;
-      const ctrlContainer = mapContainer.current?.querySelector<HTMLElement>('.mapboxgl-ctrl-top-right');
+      const ctrlContainer = mapContainer.current?.querySelector<HTMLElement>('.maplibregl-ctrl-top-right');
       if (ctrlContainer) ctrlContainer.style.top = topOffset;
     });
   }, []);
@@ -220,7 +207,7 @@ export default function MapView() {
         properties: { ...bar },
       })),
     };
-    (map.current.getSource('bars') as mapboxgl.GeoJSONSource).setData(geojson);
+    (map.current.getSource('bars') as maplibregl.GeoJSONSource).setData(geojson);
 
     // Enlarge pins and add stroke when a filter is active so they stand out
     if (map.current.getLayer('bars-circle')) {
@@ -306,7 +293,7 @@ export default function MapView() {
             ],
           ] as unknown as string,
           'text-size': 11,
-          'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+          'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
           'text-line-height': 1.3,
         },
         paint: { 'text-color': '#ffffff' },
@@ -359,16 +346,18 @@ export default function MapView() {
         },
       });
 
-      // Clicking a cluster zooms in
+      // Clicking a cluster zooms in (MapLibre: Promise-based, not callback)
       map.current!.on('click', 'clusters', e => {
         if (!e.features?.[0]) return;
         const clusterId = e.features[0].properties!.cluster_id;
-        (map.current!.getSource('bars') as mapboxgl.GeoJSONSource)
-          .getClusterExpansionZoom(clusterId, (err, zoom) => {
-            if (err || !e.features?.[0].geometry) return;
+        (map.current!.getSource('bars') as maplibregl.GeoJSONSource)
+          .getClusterExpansionZoom(clusterId)
+          .then(zoom => {
+            if (!e.features?.[0].geometry) return;
             const coords = (e.features[0].geometry as GeoJSON.Point).coordinates as [number, number];
-            map.current!.easeTo({ center: coords, zoom: zoom! });
-          });
+            map.current!.easeTo({ center: coords, zoom });
+          })
+          .catch(() => {});
       });
 
       // Clicking a dot (via hitarea = bigger target) opens the info panel
@@ -443,13 +432,12 @@ export default function MapView() {
     );
   }, [userLocation, bars, suggestionDismissed, suggestionPriceMax]);
 
-  // Draw walking route on map via Mapbox Directions
+  // Draw walking route via OSRM (OpenStreetMap routing — gratuit, aucune clé)
   async function showRoute(destLat: number, destLng: number, barName: string) {
     if (!userLocation || !map.current) return;
-    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
     try {
       const res = await fetch(
-        `https://api.mapbox.com/directions/v5/mapbox/walking/${userLocation.lng},${userLocation.lat};${destLng},${destLat}?geometries=geojson&access_token=${token}`
+        `https://router.project-osrm.org/route/v1/foot/${userLocation.lng},${userLocation.lat};${destLng},${destLat}?overview=full&geometries=geojson`
       );
       const data = await res.json();
       const route = data.routes?.[0];
@@ -488,7 +476,7 @@ export default function MapView() {
       const coords = route.geometry.coordinates as [number, number][];
       const bounds = coords.reduce(
         (b, c) => b.extend(c),
-        new mapboxgl.LngLatBounds(coords[0], coords[0])
+        new maplibregl.LngLatBounds(coords[0], coords[0])
       );
       map.current.fitBounds(bounds, { padding: 80 });
 
@@ -562,9 +550,24 @@ export default function MapView() {
       setMessage('Erreur lors de la soumission.');
     } else {
       setMessage('Merci ! Prix enregistré 🍺');
+      // Update local state immediately (pas besoin d'attendre le rebuild)
       setBars(prev => prev.map(b =>
         b.id === selectedBar.id ? { ...b, beer_price: finalPrice, last_updated: updatedAt, price_source: 'user' } : b
       ));
+      // Vider le cache localStorage pour que la prochaine visite recharge depuis CDN
+      try { localStorage.removeItem('pbm_bars_v3'); } catch {}
+
+      // Déclencher un rebuild Vercel (rate-limit 5 min côté client)
+      const HOOK_URL = process.env.NEXT_PUBLIC_DEPLOY_HOOK_URL;
+      if (HOOK_URL) {
+        const HOOK_KEY = 'pbm_last_rebuild';
+        const lastRebuild = parseInt(localStorage.getItem(HOOK_KEY) || '0');
+        if (Date.now() - lastRebuild > 5 * 60 * 1000) {
+          localStorage.setItem(HOOK_KEY, String(Date.now()));
+          fetch(HOOK_URL).catch(() => {}); // fire & forget
+        }
+      }
+
       setTimeout(() => {
         setSelectedBar(null); setShowPriceForm(false);
         setPriceInput(''); setPriceConfirmed(false); setMessage('');
