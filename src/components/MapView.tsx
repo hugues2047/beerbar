@@ -63,6 +63,7 @@ type RouteInfo = {
 export default function MapView() {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
+  const chromeRef = useRef<HTMLDivElement>(null);   // for measuring actual chrome height
 
   const [bars, setBars] = useState<Bar[]>([]);
   const [selectedBar, setSelectedBar] = useState<Bar | null>(null);
@@ -84,6 +85,34 @@ export default function MapView() {
   const [terraceFilter, setTerraceFilter] = useState(false);
   const [lateFilter, setLateFilter] = useState<LateFilter>('none');
   const [barsLoading, setBarsLoading] = useState(true);
+
+  // Dynamic chrome height — drives sheet maxHeight so it never goes under the search bar
+  const [chromeH, setChromeH] = useState(52);
+  useEffect(() => {
+    if (!chromeRef.current) return;
+    const ro = new ResizeObserver(() => {
+      if (chromeRef.current) setChromeH(chromeRef.current.getBoundingClientRect().height);
+    });
+    ro.observe(chromeRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  // Virtual keyboard height — keeps price form CTA above iOS keyboard
+  const [kbH, setKbH] = useState(0);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+    const handler = () => {
+      const diff = window.innerHeight - (window.visualViewport!.height + window.visualViewport!.offsetTop);
+      setKbH(Math.max(0, diff));
+    };
+    window.visualViewport.addEventListener('resize', handler);
+    window.visualViewport.addEventListener('scroll', handler);
+    handler();
+    return () => {
+      window.visualViewport!.removeEventListener('resize', handler);
+      window.visualViewport!.removeEventListener('scroll', handler);
+    };
+  }, []);
 
   const filteredBars = useMemo(() => {
     return bars.filter(bar => {
@@ -172,6 +201,11 @@ export default function MapView() {
     map.current.addControl(geolocate, 'top-right');
     map.current.on('load', () => {
       if (isMobile) geolocate.trigger();
+      // Push Mapbox controls below our top chrome (safe-area + chrome ~56px)
+      // so the geolocate button doesn't overlap the filter chips
+      const topOffset = `calc(env(safe-area-inset-top, 0px) + 56px)`;
+      const ctrlContainer = mapContainer.current?.querySelector<HTMLElement>('.mapboxgl-ctrl-top-right');
+      if (ctrlContainer) ctrlContainer.style.top = topOffset;
     });
   }, []);
 
@@ -566,10 +600,11 @@ export default function MapView() {
 
       {/* ── TOP CHROME ── compact single row, search expands on demand ── */}
       <div
+        ref={chromeRef}
         className="absolute top-0 left-0 right-0 z-10 pointer-events-none"
         style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
       >
-        <div className="px-3 pt-2.5 flex flex-col gap-1.5 pointer-events-auto">
+        <div className="px-3 pt-2.5 pb-2.5 flex flex-col gap-1.5 pointer-events-auto">
 
           {/* Search input — only visible when open */}
           {searchOpen && (
@@ -595,81 +630,101 @@ export default function MapView() {
             </div>
           )}
 
-          {/* Always-visible row: search toggle + filter chips + legend + geolocate spacer */}
-          <div className="flex gap-1.5 items-center overflow-x-auto scrollbar-hide">
+          {/* Always-visible row: scrollable chips (left) + pinned legend (right) */}
+          {/* Legend is position:absolute so it's always visible even when chips overflow */}
+          <div className="relative">
 
-            {/* 🔍 Search toggle — icon when closed, active when query set */}
-            <button
-              onClick={() => setSearchOpen(v => !v)}
-              className={`flex-shrink-0 flex items-center justify-center rounded-full w-8 h-8 transition-all active:scale-95 ${
-                searchQuery
-                  ? 'bg-gray-900 text-white'
-                  : 'bg-white/90 text-gray-500 backdrop-blur-sm'
-              }`}
-              style={{ boxShadow: searchQuery ? 'none' : '0 1px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)' }}
-              title="Rechercher"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
-              </svg>
-            </button>
+            {/* Scrollable chips — pr-[100px] keeps chips from scrolling under the legend */}
+            <div className="flex gap-1.5 items-center overflow-x-auto scrollbar-hide pr-[100px]">
 
-            {/* Price chips */}
-            {([
-              { key: 'under4', label: '< 4€' },
-              { key: 'under5', label: '< 5€' },
-              { key: 'under6', label: '< 6€' },
-            ] as const).map(({ key, label }) => (
+              {/* 🔍 Search toggle */}
               <button
-                key={key}
-                onClick={() => setPriceFilter(priceFilter === key ? 'all' : key)}
-                className={`flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95 ${
-                  priceFilter === key ? 'bg-gray-900 text-white' : 'bg-white/90 text-gray-700 backdrop-blur-sm'
+                onClick={() => setSearchOpen(v => !v)}
+                className={`flex-shrink-0 flex items-center justify-center rounded-full w-8 h-8 transition-all active:scale-95 ${
+                  searchQuery
+                    ? 'bg-gray-900 text-white'
+                    : 'bg-white/90 text-gray-500 backdrop-blur-sm'
                 }`}
-                style={{ boxShadow: priceFilter === key ? 'none' : '0 1px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)' }}
+                style={{ boxShadow: searchQuery ? 'none' : '0 1px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)' }}
+                title="Rechercher"
               >
-                {label}
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+                </svg>
               </button>
-            ))}
 
-            {/* Terrace chip */}
-            <button
-              onClick={() => setTerraceFilter(!terraceFilter)}
-              className={`flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95 ${
-                terraceFilter ? 'bg-gray-900 text-white' : 'bg-white/90 text-gray-700 backdrop-blur-sm'
-              }`}
-              style={{ boxShadow: terraceFilter ? 'none' : '0 1px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)' }}
-            >
-              🌿
-            </button>
+              {/* Price chips */}
+              {([
+                { key: 'under4', label: '< 4€' },
+                { key: 'under5', label: '< 5€' },
+                { key: 'under6', label: '< 6€' },
+              ] as const).map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setPriceFilter(priceFilter === key ? 'all' : key)}
+                  className={`flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95 ${
+                    priceFilter === key ? 'bg-gray-900 text-white' : 'bg-white/90 text-gray-700 backdrop-blur-sm'
+                  }`}
+                  style={{ boxShadow: priceFilter === key ? 'none' : '0 1px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)' }}
+                >
+                  {label}
+                </button>
+              ))}
 
-            {/* Late-close chips */}
-            {(['2h', '5h'] as const).map(val => (
+              {/* Terrace chip */}
               <button
-                key={val}
-                onClick={() => setLateFilter(lateFilter === val ? 'none' : val)}
+                onClick={() => setTerraceFilter(!terraceFilter)}
                 className={`flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95 ${
-                  lateFilter === val ? 'bg-gray-900 text-white' : 'bg-white/90 text-gray-700 backdrop-blur-sm'
+                  terraceFilter ? 'bg-gray-900 text-white' : 'bg-white/90 text-gray-700 backdrop-blur-sm'
                 }`}
-                style={{ boxShadow: lateFilter === val ? 'none' : '0 1px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)' }}
-                title={val === '2h' ? 'Ouvert après 2h du matin' : 'Ouvert après 5h du matin'}
+                style={{ boxShadow: terraceFilter ? 'none' : '0 1px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)' }}
               >
-                🌙{val}
+                🌿
               </button>
-            ))}
 
-            {/* Color legend */}
-            <div className="ml-auto flex items-center gap-1 bg-white/90 backdrop-blur-sm rounded-full px-2.5 py-1.5 flex-shrink-0"
-                 style={{ boxShadow: '0 1px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)' }}>
-              <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
-              <span className="text-[10px] font-semibold text-gray-500">5€</span>
-              <span className="w-2 h-2 rounded-full bg-orange-500 flex-shrink-0 ml-1" />
-              <span className="text-[10px] font-semibold text-gray-500">7€</span>
-              <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0 ml-1" />
+              {/* Late-close chips */}
+              {(['2h', '5h'] as const).map(val => (
+                <button
+                  key={val}
+                  onClick={() => setLateFilter(lateFilter === val ? 'none' : val)}
+                  className={`flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95 ${
+                    lateFilter === val ? 'bg-gray-900 text-white' : 'bg-white/90 text-gray-700 backdrop-blur-sm'
+                  }`}
+                  style={{ boxShadow: lateFilter === val ? 'none' : '0 1px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)' }}
+                  title={val === '2h' ? 'Ouvert après 2h du matin' : 'Ouvert après 5h du matin'}
+                >
+                  🌙{val}
+                </button>
+              ))}
+
+              {/* Reset all filters — only when any filter is active */}
+              {isFiltered && (
+                <button
+                  onClick={() => { setPriceFilter('all'); setTerraceFilter(false); setLateFilter('none'); setSearchQuery(''); setSearchOpen(false); }}
+                  className="flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95 bg-gray-200 text-gray-600"
+                >
+                  ✕ reset
+                </button>
+              )}
             </div>
 
-            {/* Space for Mapbox geolocate control (top-right, overlaps here) */}
-            <div className="w-9 flex-shrink-0" />
+            {/* Color legend — pinned right, always visible, chips scroll under it */}
+            {/* The left shadow creates a soft fade effect behind scrolling chips */}
+            <div
+              className="absolute right-0 inset-y-0 flex items-center pl-6 pointer-events-none"
+              style={{ background: 'linear-gradient(to right, transparent 0%, rgba(0,0,0,0.0) 0%)' }}
+            >
+              <div
+                className="flex items-center gap-1 bg-white/95 backdrop-blur-md rounded-full px-2.5 py-1.5 flex-shrink-0 pointer-events-none"
+                style={{ boxShadow: '-12px 0 16px 8px rgba(255,255,255,0.6), 0 1px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)' }}
+              >
+                <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
+                <span className="text-[10px] font-semibold text-gray-500">5€</span>
+                <span className="w-2 h-2 rounded-full bg-orange-500 flex-shrink-0 ml-1" />
+                <span className="text-[10px] font-semibold text-gray-500">7€</span>
+                <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0 ml-1" />
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -791,8 +846,8 @@ export default function MapView() {
           className="absolute bottom-0 left-0 right-0 z-30 bg-white sheet-slide-up flex flex-col"
           style={{
             borderRadius: '20px 20px 0 0',
-            // Never taller than available space below the top chrome (~60px) + safe area
-            maxHeight: 'calc(100dvh - env(safe-area-inset-top, 0px) - 60px)',
+            // Never taller than available space below the actual measured chrome height
+            maxHeight: `calc(100dvh - ${chromeH}px - 8px)`,
             boxShadow: '0 -2px 32px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.04)',
           }}
         >
@@ -802,7 +857,7 @@ export default function MapView() {
           </div>
 
           {/* ── Scrollable info zone — bottom padding accounts for floating CTA ── */}
-          <div className="px-5 pt-2 overflow-y-auto flex-1 min-h-0" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 84px)' }}>
+          <div className="px-5 pt-2 overflow-y-auto flex-1 min-h-0" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 100px)' }}>
             {/* Name row */}
             <div className="flex items-start gap-2 mb-1">
               <div className="flex-1 min-w-0">
@@ -889,10 +944,11 @@ export default function MapView() {
       )}
 
       {/* ── FLOATING CTA — toujours visible, hors du scroll de la fiche ── */}
+      {/* kbH > 0 on iOS when virtual keyboard is open — CTA lifts above keyboard */}
       {selectedBar && (
         <div
-          className="absolute left-0 right-0 z-40 px-5"
-          style={{ bottom: 'max(20px, env(safe-area-inset-bottom, 20px))' }}
+          className="absolute left-0 right-0 z-40 px-5 transition-[bottom] duration-150"
+          style={{ bottom: kbH > 0 ? `${kbH + 12}px` : 'max(20px, env(safe-area-inset-bottom, 20px))' }}
         >
           {!showPriceForm ? (
             <div className="flex flex-col gap-2">
