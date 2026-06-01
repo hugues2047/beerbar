@@ -679,7 +679,7 @@ export default function MapView() {
                 }`}
                 style={{ boxShadow: terraceFilter ? 'none' : '0 1px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)' }}
               >
-                🌿
+                ⛱️
               </button>
 
               {/* Late-close chips */}
@@ -892,7 +892,7 @@ export default function MapView() {
             {/* Terrace badge */}
             {selectedBar.has_terrace === true && (
               <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-green-700 bg-green-50 px-2.5 py-1 rounded-full mb-3">
-                🌿 {selectedBar.terrace_grande ? 'Grande terrasse' : 'Terrasse'}
+                ⛱️ {selectedBar.terrace_grande ? 'Grande terrasse' : 'Terrasse'}
               </span>
             )}
             {selectedBar.has_terrace === false && (
