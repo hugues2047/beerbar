@@ -253,7 +253,8 @@ export default function MapView() {
         clusterRadius: 30,
         clusterProperties: {
           // prix le moins cher du cluster (999 = aucun prix connu)
-          min_price: ['min', ['case', ['>', ['get', 'beer_price'], 0], ['get', 'beer_price'], 999]],
+          // coalesce handles bars where beer_price is null in the DB
+          min_price: ['min', ['case', ['>', ['coalesce', ['get', 'beer_price'], 0], 0], ['coalesce', ['get', 'beer_price'], 0], 999]],
         },
       });
 
@@ -293,7 +294,7 @@ export default function MapView() {
             ],
           ] as unknown as string,
           'text-size': 11,
-          'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+          'text-font': ['Noto Sans Regular', 'Arial Unicode MS Regular'],
           'text-line-height': 1.3,
         },
         paint: { 'text-color': '#ffffff' },
