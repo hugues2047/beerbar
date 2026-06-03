@@ -372,10 +372,15 @@ export default function MapView() {
           id: p.id, name: p.name, address: p.address,
           latitude: p.latitude, longitude: p.longitude,
           beer_price: p.beer_price, price_source: p.price_source ?? null,
+          happy_hour_price: p.happy_hour_price ?? null,
+          happy_hour_times: p.happy_hour_times ?? null,
           submitted_by: null, last_updated: p.last_updated,
           serves_beer: p.serves_beer ?? null, amenity_type: p.amenity_type ?? null,
           has_terrace: p.has_terrace ?? null, terrace_grande: p.terrace_grande ?? null,
           opening_hours: p.opening_hours ? JSON.parse(p.opening_hours) : null,
+          happy_hour_periods: p.happy_hour_periods ? JSON.parse(p.happy_hour_periods) : null,
+          happy_hour_source: p.happy_hour_source ?? null,
+          happy_hour_updated_at: p.happy_hour_updated_at ?? null,
           close_hour: p.close_hour ?? null,
         });
         setShowPriceForm(false);
@@ -920,6 +925,19 @@ export default function MapView() {
                 </div>
               );
             })()}
+
+            {/* Happy hour badge */}
+            {(selectedBar.happy_hour_times || (selectedBar.happy_hour_price != null && selectedBar.happy_hour_price > 0)) && (
+              <div className="flex items-center gap-2 mb-2">
+                <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full">
+                  🍻 Happy Hour
+                  {selectedBar.happy_hour_times && <span className="font-medium text-amber-600"> · {selectedBar.happy_hour_times}</span>}
+                  {selectedBar.happy_hour_price != null && selectedBar.happy_hour_price > 0 && (
+                    <span className="font-bold text-amber-800"> · {selectedBar.happy_hour_price.toFixed(2)}€</span>
+                  )}
+                </span>
+              </div>
+            )}
 
             {/* Terrace badge */}
             {selectedBar.has_terrace === true && (

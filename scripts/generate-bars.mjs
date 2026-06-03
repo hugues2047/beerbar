@@ -37,17 +37,30 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 console.log('🍺 Generating public/bars.json from Supabase…');
 
+const baseSelect = 'id,name,address,latitude,longitude,beer_price,happy_hour_price,happy_hour_times,price_source,last_updated,has_terrace,terrace_grande,opening_hours,close_hour';
+const selectWithHappyHourPeriods = `${baseSelect},happy_hour_periods,happy_hour_source,happy_hour_updated_at`;
+let selectColumns = selectWithHappyHourPeriods;
 const all = [];
 let from = 0;
 while (true) {
   const { data, error } = await supabase
     .from('bars')
-    .select('id,name,address,latitude,longitude,beer_price,price_source,last_updated,has_terrace,terrace_grande,opening_hours,close_hour')
+    .select(selectColumns)
     .or('serves_beer.eq.true,serves_beer.is.null')
     .range(from, from + 999);
 
   if (error) {
-    console.error('❌ Supabase error:', error.message);
+    if (
+      selectColumns === selectWithHappyHourPeriods
+      && /happy_hour_(periods|source|updated_at)|does not exist/i.test(error.message)
+    ) {
+      console.warn('happy_hour_periods columns missing; generating without happy hour periods.');
+      selectColumns = baseSelect;
+      all.length = 0;
+      from = 0;
+      continue;
+    }
+    console.error('Supabase error:', error.message);
     process.exit(1);
   }
   if (!data?.length) break;
