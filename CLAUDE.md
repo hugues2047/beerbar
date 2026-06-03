@@ -48,14 +48,27 @@ git push
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public | Client Supabase |
 | `DEPLOY_HOOK_URL` | **Server only** | Route `/api/rebuild` → déclenche rebuild. **Ne pas mettre NEXT_PUBLIC_.** Fallback : `NEXT_PUBLIC_DEPLOY_HOOK_URL` si non configuré. |
 
+### Scripts d'enrichissement disponibles
+
+| Script | Source | Ce qu'il enrichit | Fréquence suggérée |
+|---|---|---|---|
+| `enrich_hours_osm.mjs` | OSM Overpass (gratuit) | `opening_hours`, `close_hour`, `has_terrace` | Mensuel |
+| `enrich_happy_hours_osm.mjs` | OSM Overpass (gratuit) | `happy_hour_periods`, `happy_hour_times`, `happy_hour_source` | Mensuel |
+| `scrape_mgb_happy_hours.mjs` | MisterGoodBeer (scraping) | `happy_hour_price`, `happy_hour_times` pour bars avec URL individuelle MGB | Une fois / quand nouveau scraping MGB |
+| `scrape_mgb_neighborhood.mjs` | MisterGoodBeer (slug inference) | Idem pour bars sans URL individuelle | Idem |
+| `enrich_bars_google.mjs` | Google Places API (payant) | `beer_price`, `opening_hours`, `has_terrace`, `google_place_id` | Quand budget dispo |
+
+> **Note** : `scrape_mgb_neighborhood.mjs` doit être lancé 2 fois la première fois (grant source_url ajouté après le premier run).
+
 ### Champs inclus dans bars.json
 
 Définis dans le `SELECT` de `scripts/generate-bars.mjs` :
 ```
 id, name, address, latitude, longitude,
-beer_price, price_source, phone, last_updated,
+beer_price, happy_hour_price, happy_hour_times, price_source, last_updated,
 has_terrace, terrace_grande,
-opening_hours, close_hour
+opening_hours, close_hour,
+happy_hour_periods, happy_hour_source, happy_hour_updated_at
 ```
 
 Si tu ajoutes une nouvelle colonne à afficher dans l'app → **mettre à jour ce SELECT**.
