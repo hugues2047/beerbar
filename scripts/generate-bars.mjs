@@ -42,7 +42,7 @@ let from = 0;
 while (true) {
   const { data, error } = await supabase
     .from('bars')
-    .select('id,name,address,latitude,longitude,beer_price,price_source,phone,last_updated,has_terrace,terrace_grande,opening_hours,close_hour')
+    .select('id,name,address,latitude,longitude,beer_price,price_source,last_updated,has_terrace,terrace_grande,opening_hours,close_hour')
     .or('serves_beer.eq.true,serves_beer.is.null')
     .range(from, from + 999);
 

@@ -84,6 +84,7 @@ export default function MapView() {
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
   const [terraceFilter, setTerraceFilter] = useState(false);
   const [lateFilter, setLateFilter] = useState<LateFilter>('none');
+  const [openNowFilter, setOpenNowFilter] = useState(false);
   const [barsLoading, setBarsLoading] = useState(true);
 
   // Dynamic chrome height — drives sheet maxHeight so it never goes under the search bar
@@ -124,11 +125,13 @@ export default function MapView() {
       // 26 = 2am in 24+ notation, 29 = 5am
       if (lateFilter === '2h' && (bar.close_hour === null || bar.close_hour < 26)) return false;
       if (lateFilter === '5h' && (bar.close_hour === null || bar.close_hour < 29)) return false;
+      // open now: only bars where we KNOW they're open (null = unknown → excluded)
+      if (openNowFilter && isOpenNow(bar.opening_hours) !== true) return false;
       return true;
     });
-  }, [bars, searchQuery, priceFilter, terraceFilter, lateFilter]);
+  }, [bars, searchQuery, priceFilter, terraceFilter, lateFilter, openNowFilter]);
 
-  const isFiltered = priceFilter !== 'all' || !!searchQuery || terraceFilter || lateFilter !== 'none';
+  const isFiltered = priceFilter !== 'all' || !!searchQuery || terraceFilter || lateFilter !== 'none' || openNowFilter;
 
   // Load all bars — static JSON servi par CDN Vercel (< 300 ms, 0 coût Supabase)
   // Re-généré à chaque déploiement via scripts/generate-bars.mjs (prebuild)
@@ -369,7 +372,7 @@ export default function MapView() {
           id: p.id, name: p.name, address: p.address,
           latitude: p.latitude, longitude: p.longitude,
           beer_price: p.beer_price, price_source: p.price_source ?? null,
-          phone: p.phone, submitted_by: null, last_updated: p.last_updated,
+          submitted_by: null, last_updated: p.last_updated,
           serves_beer: p.serves_beer ?? null, amenity_type: p.amenity_type ?? null,
           has_terrace: p.has_terrace ?? null, terrace_grande: p.terrace_grande ?? null,
           opening_hours: p.opening_hours ? JSON.parse(p.opening_hours) : null,
@@ -558,15 +561,12 @@ export default function MapView() {
       // Vider le cache localStorage pour que la prochaine visite recharge depuis CDN
       try { localStorage.removeItem('pbm_bars_v3'); } catch {}
 
-      // Déclencher un rebuild Vercel (rate-limit 5 min côté client)
-      const HOOK_URL = process.env.NEXT_PUBLIC_DEPLOY_HOOK_URL;
-      if (HOOK_URL) {
-        const HOOK_KEY = 'pbm_last_rebuild';
-        const lastRebuild = parseInt(localStorage.getItem(HOOK_KEY) || '0');
-        if (Date.now() - lastRebuild > 5 * 60 * 1000) {
-          localStorage.setItem(HOOK_KEY, String(Date.now()));
-          fetch(HOOK_URL).catch(() => {}); // fire & forget
-        }
+      // Déclencher un rebuild Vercel via API route (hook URL masqué côté serveur)
+      const HOOK_KEY = 'pbm_last_rebuild';
+      const lastRebuildTs = parseInt(localStorage.getItem(HOOK_KEY) || '0');
+      if (Date.now() - lastRebuildTs > 5 * 60 * 1000) {
+        localStorage.setItem(HOOK_KEY, String(Date.now()));
+        fetch('/api/rebuild', { method: 'POST' }).catch(() => {});
       }
 
       setTimeout(() => {
@@ -686,6 +686,18 @@ export default function MapView() {
                 ⛱️
               </button>
 
+              {/* Open now chip */}
+              <button
+                onClick={() => setOpenNowFilter(!openNowFilter)}
+                className={`flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95 ${
+                  openNowFilter ? 'bg-gray-900 text-white' : 'bg-white/90 text-gray-700 backdrop-blur-sm'
+                }`}
+                style={{ boxShadow: openNowFilter ? 'none' : '0 1px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)' }}
+                title="Ouvert maintenant"
+              >
+                🟢 Ouvert
+              </button>
+
               {/* Late-close chips */}
               {(['2h', '5h'] as const).map(val => (
                 <button
@@ -704,7 +716,7 @@ export default function MapView() {
               {/* Reset all filters — only when any filter is active */}
               {isFiltered && (
                 <button
-                  onClick={() => { setPriceFilter('all'); setTerraceFilter(false); setLateFilter('none'); setSearchQuery(''); setSearchOpen(false); }}
+                  onClick={() => { setPriceFilter('all'); setTerraceFilter(false); setLateFilter('none'); setOpenNowFilter(false); setSearchQuery(''); setSearchOpen(false); }}
                   className="flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95 bg-gray-200 text-gray-600"
                 >
                   ✕ reset
@@ -867,6 +879,22 @@ export default function MapView() {
               <div className="flex-1 min-w-0">
                 <h2 className="text-[20px] font-bold text-gray-900 leading-snug">{selectedBar.name}</h2>
               </div>
+              {/* Share */}
+              <button
+                onClick={() => {
+                  const price = selectedBar.beer_price > 0 ? `${selectedBar.beer_price.toFixed(2)}€ la pinte` : 'prix inconnu';
+                  const text = `${selectedBar.name} — ${price}`;
+                  const url = `https://maps.google.com/?q=${selectedBar.latitude},${selectedBar.longitude}`;
+                  if (navigator.share) navigator.share({ title: selectedBar.name, text, url }).catch(() => {});
+                  else navigator.clipboard?.writeText(`${text}\n${url}`).catch(() => {});
+                }}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 flex-shrink-0 active:bg-gray-200 mt-0.5"
+                title="Partager"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                </svg>
+              </button>
               <button
                 onClick={closeAll}
                 className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 flex-shrink-0 active:bg-gray-200 mt-0.5 text-sm"

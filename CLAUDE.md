@@ -25,7 +25,7 @@ Ce fichier est généré au build via `scripts/generate-bars.mjs` (lancé en `pr
 | Ajout de nouveaux bars (scraper) | ✅ OUI |
 | Mise à jour `has_terrace`, `terrace_grande` | ✅ OUI |
 | Correction d'un nom / adresse en DB | ✅ OUI |
-| Submit prix par un utilisateur (frontend) | ✅ automatique via Deploy Hook |
+| Submit prix par un utilisateur (frontend) | ✅ automatique via `/api/rebuild` → Deploy Hook |
 | Changement de code uniquement | ✅ automatique via git push |
 | Modif schéma SQL (ajout colonne) | ✅ OUI + mettre à jour le SELECT dans `generate-bars.mjs` |
 
@@ -39,6 +39,14 @@ curl -X POST https://api.vercel.com/v1/integrations/deploy/prj_WUEthL5vw3k08DpMQ
 git commit --allow-empty -m "chore: trigger rebuild to refresh bars.json"
 git push
 ```
+
+### Env vars Vercel requises
+
+| Var | Visibilité | Usage |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Public | Client Supabase |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public | Client Supabase |
+| `DEPLOY_HOOK_URL` | **Server only** | Route `/api/rebuild` → déclenche rebuild. **Ne pas mettre NEXT_PUBLIC_.** Fallback : `NEXT_PUBLIC_DEPLOY_HOOK_URL` si non configuré. |
 
 ### Champs inclus dans bars.json
 
