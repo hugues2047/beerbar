@@ -3,316 +3,322 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Prix de la pinte à Paris par arrondissement</title>
+  <title>Prix de la pinte à Paris</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
-      background: #f0f2f5;
+      font-family: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      background: #ECEAE5;
       min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 36px 24px;
     }
-    #app { max-width: 960px; margin: 0 auto; padding: 28px 20px 40px; }
 
-    /* Header */
-    .header { margin-bottom: 20px; }
+    /* ── Card ─────────────────────────────────────────────── */
+    .card {
+      background: #FFFFFF;
+      border-radius: 28px;
+      width: 940px;
+      overflow: hidden;
+      box-shadow: 0 28px 80px rgba(0,0,0,0.13), 0 0 0 1px rgba(0,0,0,0.04);
+    }
+
+    /* ── Header ───────────────────────────────────────────── */
+    .header {
+      padding: 36px 44px 0;
+    }
+    .eyebrow {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: #F97316;
+      margin-bottom: 10px;
+    }
     .header h1 {
-      font-size: 28px; font-weight: 800; color: #111; letter-spacing: -0.5px;
+      font-size: 34px;
+      font-weight: 900;
+      letter-spacing: -0.9px;
+      color: #0C0C0C;
+      line-height: 1.06;
     }
-    .header p { font-size: 14px; color: #888; margin-top: 4px; }
+    .header p {
+      font-size: 13px;
+      color: #B8B5AE;
+      margin-top: 8px;
+      font-weight: 400;
+    }
 
-    /* Stats strip */
-    .stats { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+    /* ── Stats strip ──────────────────────────────────────── */
+    .stats {
+      display: flex;
+      gap: 0;
+      margin-top: 28px;
+      border-top: 1px solid #F2F0EC;
+    }
     .stat {
-      background: white; border-radius: 14px; padding: 14px 18px;
-      box-shadow: 0 1px 8px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.04);
-      flex: 1; min-width: 120px;
+      flex: 1;
+      padding: 20px 24px;
+      border-right: 1px solid #F2F0EC;
     }
-    .stat-val { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; line-height: 1; }
-    .stat-lbl { font-size: 12px; color: #888; margin-top: 4px; line-height: 1.3; }
+    .stat:last-child { border-right: none; }
+    .stat-val {
+      font-size: 28px;
+      font-weight: 900;
+      letter-spacing: -1px;
+      line-height: 1;
+    }
+    .stat-lbl {
+      font-size: 11.5px;
+      color: #C0BDB7;
+      margin-top: 5px;
+      line-height: 1.35;
+      font-weight: 500;
+    }
 
-    /* Map */
+    /* ── Map ──────────────────────────────────────────────── */
     #map {
-      width: 100%; height: 520px; border-radius: 18px; overflow: hidden;
-      box-shadow: 0 4px 28px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.05);
-      margin-bottom: 20px;
+      width: 100%;
+      height: 520px;
+    }
+    .leaflet-container {
+      background: #F5F3EF !important;
+      font-family: inherit !important;
+    }
+    .leaflet-control-attribution { display: none !important; }
+
+    /* ── Legend ───────────────────────────────────────────── */
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 18px 44px 26px;
+      border-top: 1px solid #F2F0EC;
+    }
+    .legend-end {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #C0BDB7;
+      white-space: nowrap;
+    }
+    .legend-bar {
+      flex: 1;
+      height: 9px;
+      border-radius: 5px;
+      overflow: hidden;
+      display: flex;
+    }
+    .source-txt {
+      font-size: 11px;
+      color: #D0CEC9;
+      white-space: nowrap;
+      font-weight: 500;
     }
 
-    /* Legend */
-    .legend-wrap {
-      background: white; border-radius: 14px; padding: 14px 18px;
-      box-shadow: 0 1px 8px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.04);
-      margin-bottom: 20px;
+    /* ── Tooltip ──────────────────────────────────────────── */
+    .leaflet-tooltip.tt {
+      background: rgba(15,15,15,0.88);
+      backdrop-filter: blur(8px);
+      border: none;
+      border-radius: 12px;
+      padding: 0;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.25);
+      font-family: inherit;
     }
-    .legend-title { font-size: 11px; font-weight: 700; color: #999; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px; }
-    .legend-bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; margin-bottom: 8px; }
-    .legend-labels { display: flex; justify-content: space-between; font-size: 11px; color: #666; font-weight: 600; }
-
-    /* Table */
-    .table-wrap {
-      background: white; border-radius: 14px; overflow: hidden;
-      box-shadow: 0 1px 8px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.04);
-    }
-    table { width: 100%; border-collapse: collapse; }
-    thead th {
-      font-size: 11px; font-weight: 700; color: #999; text-transform: uppercase;
-      letter-spacing: .06em; padding: 12px 16px; text-align: left;
-      border-bottom: 1px solid #f0f0f0;
-    }
-    tbody tr:not(:last-child) td { border-bottom: 1px solid #f8f8f8; }
-    td { padding: 10px 16px; font-size: 13px; color: #333; }
-    td.price { font-weight: 800; font-size: 15px; }
-    .rank-badge {
-      display: inline-block; font-size: 10px; font-weight: 700;
-      padding: 2px 7px; border-radius: 20px; color: white;
-    }
-
-    /* Tooltip */
-    .leaflet-tooltip.price-tooltip {
-      background: white; border: none; border-radius: 12px; padding: 0;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.15); font-family: inherit;
-    }
-    .leaflet-tooltip.price-tooltip::before { display: none; }
-    .tt-inner { padding: 12px 14px; }
-    .tt-arr { font-size: 13px; font-weight: 700; color: #888; margin-bottom: 2px; }
-    .tt-price { font-size: 28px; font-weight: 800; line-height: 1; margin-bottom: 4px; }
-    .tt-detail { font-size: 12px; color: #999; }
-
-    /* Source */
-    .source { font-size: 11px; color: #bbb; text-align: center; margin-top: 16px; }
-    .source a { color: #999; }
+    .leaflet-tooltip.tt::before { display: none; }
+    .tt-inner { padding: 12px 16px; }
+    .tt-name { font-size: 11.5px; font-weight: 600; color: rgba(255,255,255,0.5); margin-bottom: 3px; }
+    .tt-price { font-size: 26px; font-weight: 900; color: #fff; letter-spacing: -0.5px; line-height: 1; }
+    .tt-sub { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 4px; }
   </style>
 </head>
 <body>
-<div id="app">
+<div class="card">
 
   <div class="header">
-    <h1>🍺 Prix de la pinte à Paris</h1>
-    <p>Moyenne par arrondissement · 4 142 bars avec prix renseigné · juin 2025</p>
-  </div>
+    <div class="eyebrow">Paris · Données 2025</div>
+    <h1>Prix d'une pinte de bière<br>par arrondissement</h1>
+    <p>4 142 bars avec prix renseigné · moyenne des bières pression</p>
 
-  <div class="stats">
-    <div class="stat">
-      <div class="stat-val" style="color:#F97316">5,96 €</div>
-      <div class="stat-lbl">Prix moyen<br>à Paris</div>
-    </div>
-    <div class="stat">
-      <div class="stat-val" style="color:#22C55E">5,19 €</div>
-      <div class="stat-lbl">20e arr.<br>le moins cher</div>
-    </div>
-    <div class="stat">
-      <div class="stat-val" style="color:#EF4444">7,97 €</div>
-      <div class="stat-lbl">7e arr.<br>le plus cher</div>
-    </div>
-    <div class="stat">
-      <div class="stat-val" style="color:#6366f1">+53%</div>
-      <div class="stat-lbl">écart 20e → 7e<br>pour la même bière</div>
-    </div>
-    <div class="stat">
-      <div class="stat-val">104</div>
-      <div class="stat-lbl">bars encore<br>à moins de 4 €</div>
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-val" style="color:#F97316">5,96 €</div>
+        <div class="stat-lbl">Prix moyen<br>à Paris</div>
+      </div>
+      <div class="stat">
+        <div class="stat-val" style="color:#4ADE80">5,19 €</div>
+        <div class="stat-lbl">20<small>e</small> · le moins cher</div>
+      </div>
+      <div class="stat">
+        <div class="stat-val" style="color:#F87171">7,97 €</div>
+        <div class="stat-lbl">7<small>e</small> · le plus cher</div>
+      </div>
+      <div class="stat">
+        <div class="stat-val" style="color:#A78BFA">+53%</div>
+        <div class="stat-lbl">d'écart entre<br>les extrêmes</div>
+      </div>
     </div>
   </div>
 
   <div id="map"></div>
 
-  <div class="legend-wrap">
-    <div class="legend-title">Prix moyen de la pinte (€)</div>
+  <div class="legend-row">
+    <span class="legend-end">5,00 €</span>
     <div class="legend-bar" id="legendBar"></div>
-    <div class="legend-labels">
-      <span>5,00 €</span>
-      <span>5,75 €</span>
-      <span>6,50 €</span>
-      <span>7,25 €</span>
-      <span>8,00 €+</span>
-    </div>
+    <span class="legend-end">8,00 €</span>
+    <span class="source-txt">beerbar.fr</span>
   </div>
 
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Arrondissement</th>
-          <th>Prix moyen</th>
-          <th>Médiane</th>
-          <th>Bars</th>
-          <th>Fourchette</th>
-        </tr>
-      </thead>
-      <tbody id="tableBody"></tbody>
-    </table>
-  </div>
-
-  <p class="source">
-    Données collectées sur <a href="https://speedbeer.vercel.app">speedbeer.vercel.app</a>
-    — open source, prix renseignés par les utilisateurs & Google Places
-  </p>
 </div>
 
 <script>
-// ─── Data ────────────────────────────────────────────────────────────────────
+// ── Data ──────────────────────────────────────────────────────────────────────
 const prices = {
-  1:  { avg: 6.98, median: 7.00, bars: 29,  min: 4.0, max: 9.5 },
-  2:  { avg: 6.56, median: 6.50, bars: 15,  min: 4.0, max: 9.0 },
-  3:  { avg: 6.77, median: 6.90, bars: 15,  min: 4.0, max: 9.0 },
-  4:  { avg: 6.91, median: 7.00, bars: 28,  min: 5.0, max: 9.3 },
-  5:  { avg: 6.06, median: 6.00, bars: 37,  min: 3.5, max: 9.0 },
-  6:  { avg: 6.74, median: 6.50, bars: 32,  min: 3.5, max: 9.5 },
-  7:  { avg: 7.97, median: 8.20, bars: 11,  min: 5.5, max: 9.5 },
-  8:  { avg: 7.18, median: 7.00, bars: 19,  min: 5.2, max: 9.0 },
-  9:  { avg: 6.42, median: 6.20, bars: 25,  min: 4.0, max: 8.5 },
-  10: { avg: 6.13, median: 6.00, bars: 31,  min: 3.5, max: 9.0 },
-  11: { avg: 5.99, median: 6.00, bars: 50,  min: 2.9, max: 8.0 },
-  12: { avg: 5.91, median: 5.75, bars: 40,  min: 3.0, max: 9.5 },
-  13: { avg: 6.54, median: 7.00, bars: 22,  min: 3.5, max: 9.0 },
-  14: { avg: 7.03, median: 7.00, bars: 33,  min: 4.0, max: 9.4 },
-  15: { avg: 6.46, median: 6.00, bars: 62,  min: 3.9, max: 9.5 },
-  16: { avg: 6.93, median: 6.55, bars: 12,  min: 5.5, max: 9.5 },
-  17: { avg: 6.60, median: 6.50, bars: 26,  min: 4.0, max: 9.5 },
-  18: { avg: 5.56, median: 5.50, bars: 55,  min: 3.5, max: 8.0 },
-  19: { avg: 5.66, median: 5.50, bars: 56,  min: 3.5, max: 8.0 },
-  20: { avg: 5.19, median: 5.00, bars: 39,  min: 3.0, max: 9.2 },
+  1:  { avg: 6.98, median: 7.00, bars: 29  },
+  2:  { avg: 6.56, median: 6.50, bars: 15  },
+  3:  { avg: 6.77, median: 6.90, bars: 15  },
+  4:  { avg: 6.91, median: 7.00, bars: 28  },
+  5:  { avg: 6.06, median: 6.00, bars: 37  },
+  6:  { avg: 6.74, median: 6.50, bars: 32  },
+  7:  { avg: 7.97, median: 8.20, bars: 11  },
+  8:  { avg: 7.18, median: 7.00, bars: 19  },
+  9:  { avg: 6.42, median: 6.20, bars: 25  },
+  10: { avg: 6.13, median: 6.00, bars: 31  },
+  11: { avg: 5.99, median: 6.00, bars: 50  },
+  12: { avg: 5.91, median: 5.75, bars: 40  },
+  13: { avg: 6.54, median: 7.00, bars: 22  },
+  14: { avg: 7.03, median: 7.00, bars: 33  },
+  15: { avg: 6.46, median: 6.00, bars: 62  },
+  16: { avg: 6.93, median: 6.55, bars: 12  },
+  17: { avg: 6.60, median: 6.50, bars: 26  },
+  18: { avg: 5.56, median: 5.50, bars: 55  },
+  19: { avg: 5.66, median: 5.50, bars: 56  },
+  20: { avg: 5.19, median: 5.00, bars: 39  },
 };
 
-const MIN_PRICE = 5.0, MAX_PRICE = 8.0;
+const MIN = 5.0, MAX = 8.0;
 
-// ─── Color scale: green → yellow → red ───────────────────────────────────────
+// Color scale: green-400 → yellow-400 → orange-400 → red-400
+const STOPS = [
+  [74, 222, 128],
+  [250, 204,  21],
+  [251, 146,  60],
+  [248, 113, 113],
+];
+
 function getColor(avg) {
-  const t = Math.max(0, Math.min(1, (avg - MIN_PRICE) / (MAX_PRICE - MIN_PRICE)));
-  // 4-stop: #22c55e → #eab308 → #f97316 → #ef4444
-  const stops = [
-    [34,  197, 94],   // green-500  5.0€
-    [234, 179,  8],   // yellow-500 6.0€
-    [249, 115, 22],   // orange-500 7.0€
-    [239,  68, 68],   // red-500    8.0€+
-  ];
-  const s = t * (stops.length - 1);
-  const i = Math.min(Math.floor(s), stops.length - 2);
+  const t = Math.max(0, Math.min(1, (avg - MIN) / (MAX - MIN)));
+  const s = t * (STOPS.length - 1);
+  const i = Math.min(Math.floor(s), STOPS.length - 2);
   const f = s - i;
-  const [r1,g1,b1] = stops[i];
-  const [r2,g2,b2] = stops[i+1];
+  const [r1,g1,b1] = STOPS[i], [r2,g2,b2] = STOPS[i+1];
   return `rgb(${Math.round(r1+f*(r2-r1))},${Math.round(g1+f*(g2-g1))},${Math.round(b1+f*(b2-b1))})`;
 }
 
-// ─── Legend bar ──────────────────────────────────────────────────────────────
-(function buildLegend() {
+// ── Legend ────────────────────────────────────────────────────────────────────
+(function() {
   const bar = document.getElementById('legendBar');
-  const steps = 40;
-  for (let i = 0; i < steps; i++) {
-    const div = document.createElement('div');
-    div.style.cssText = `flex:1;background:${getColor(MIN_PRICE + (i/steps)*(MAX_PRICE-MIN_PRICE))}`;
-    bar.appendChild(div);
+  for (let i = 0; i < 60; i++) {
+    const d = document.createElement('div');
+    d.style.cssText = `flex:1;background:${getColor(MIN + (i/60)*(MAX-MIN))}`;
+    bar.appendChild(d);
   }
 })();
 
-// ─── Map ──────────────────────────────────────────────────────────────────────
-const map = L.map('map', { zoomControl: true, scrollWheelZoom: false })
-             .setView([48.860, 2.338], 12);
+// ── Map — no tile layer (clean infographic look) ──────────────────────────────
+const map = L.map('map', {
+  zoomControl: false,
+  scrollWheelZoom: false,
+  attributionControl: false,
+  dragging: false,
+  doubleClickZoom: false,
+  touchZoom: false,
+}).setView([48.860, 2.338], 12);
 
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-  attribution: '© <a href="https://carto.com/">CARTO</a> © <a href="https://openstreetmap.org">OSM</a>',
-  subdomains: 'abcd', maxZoom: 18,
-}).addTo(map);
-
-// Fetch Paris arrondissement boundaries
+// ── GeoJSON ────────────────────────────────────────────────────────────────────
 fetch('https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/arrondissements/exports/geojson?lang=fr')
   .then(r => r.json())
   .then(geojson => {
-    // Try multiple property key names (Paris Open Data has inconsistent naming)
-    function getArrNum(props) {
+    function getNum(props) {
       const raw = props.c_ar ?? props.n_sq_ar ?? props.c_arinsee ?? props.arrondissement ?? '';
       const n = parseInt(String(raw));
-      // INSEE codes: 75101-75120 → arr 1-20
       return n > 100 ? n - 75100 : n;
     }
 
     const layer = L.geoJSON(geojson, {
-      style: feature => {
-        const num = getArrNum(feature.properties);
+      style: f => {
+        const num = getNum(f.properties);
         const d = prices[num];
         return {
-          fillColor: d ? getColor(d.avg) : '#ddd',
-          fillOpacity: 0.75,
-          color: 'white',
+          fillColor: d ? getColor(d.avg) : '#E0DDD8',
+          fillOpacity: 0.92,
+          color: '#FFFFFF',
           weight: 2.5,
         };
       },
-      onEachFeature: (feature, layer) => {
-        const num = getArrNum(feature.properties);
+      onEachFeature: (f, lyr) => {
+        const num = getNum(f.properties);
         const d = prices[num];
         if (!d) return;
-
-        const suffix = num <= 1 ? 'er' : 'e';
-        const color = getColor(d.avg);
-
-        layer.bindTooltip(`
+        const suf = num <= 1 ? 'er' : 'e';
+        lyr.bindTooltip(`
           <div class="tt-inner">
-            <div class="tt-arr">${num}${suffix} arrondissement</div>
-            <div class="tt-price" style="color:${color}">${d.avg.toFixed(2)} €</div>
-            <div class="tt-detail">médiane ${d.median.toFixed(2)} € · ${d.bars} bars</div>
-            <div class="tt-detail">min ${d.min.toFixed(1)} € — max ${d.max.toFixed(1)} €</div>
+            <div class="tt-name">${num}${suf} arrondissement</div>
+            <div class="tt-price">${d.avg.toFixed(2)} €</div>
+            <div class="tt-sub">${d.bars} bars · médiane ${d.median.toFixed(2)} €</div>
           </div>
-        `, { sticky: true, opacity: 1, className: 'price-tooltip' });
-
-        layer.on('mouseover', function() { this.setStyle({ fillOpacity: 0.95, weight: 3.5 }); });
-        layer.on('mouseout',  function() { this.setStyle({ fillOpacity: 0.75, weight: 2.5 }); });
+        `, { sticky: true, opacity: 1, className: 'tt' });
+        lyr.on('mouseover', () => lyr.setStyle({ fillOpacity: 1, weight: 3.5 }));
+        lyr.on('mouseout',  () => lyr.setStyle({ fillOpacity: 0.92, weight: 2.5 }));
       }
     }).addTo(map);
 
-    // Arrondissement number + price labels
+    // ── Labels ─────────────────────────────────────────────────────────────────
     geojson.features.forEach(f => {
-      const num = getArrNum(f.properties);
+      const num = getNum(f.properties);
       const d = prices[num];
       if (!d) return;
-      // Compute centroid
-      let sumLat = 0, sumLng = 0, count = 0;
+
+      // Centroid
+      let sLat = 0, sLng = 0, n = 0;
       const coords = f.geometry.type === 'Polygon'
         ? f.geometry.coordinates[0]
         : f.geometry.coordinates[0][0];
-      coords.forEach(([lng, lat]) => { sumLat += lat; sumLng += lng; count++; });
-      const center = [sumLat / count, sumLng / count];
-      const suffix = num <= 1 ? 'er' : 'e';
-      L.marker(center, {
+      coords.forEach(([lng, lat]) => { sLat += lat; sLng += lng; n++; });
+
+      const suf = num <= 1 ? 'er' : 'e';
+      L.marker([sLat/n, sLng/n], {
         icon: L.divIcon({
           className: '',
-          html: `<div style="text-align:center;color:white;font-family:-apple-system,sans-serif;text-shadow:0 1px 4px rgba(0,0,0,0.6);pointer-events:none">
-                   <div style="font-size:11px;font-weight:700;line-height:1.1">${num}${suffix}</div>
-                   <div style="font-size:10px;font-weight:600;opacity:.9">${d.avg.toFixed(2)}€</div>
-                 </div>`,
-          iconSize: [44, 28], iconAnchor: [22, 14],
+          html: `
+            <div style="
+              text-align:center;
+              pointer-events:none;
+              font-family:-apple-system,'Segoe UI','Helvetica Neue',sans-serif;
+              line-height:1.15;
+              text-shadow: 0 1px 0 rgba(255,255,255,0.35);
+            ">
+              <div style="font-size:10.5px;font-weight:800;color:rgba(0,0,0,0.55);letter-spacing:.01em">${num}${suf}</div>
+              <div style="font-size:12px;font-weight:900;color:rgba(0,0,0,0.82);letter-spacing:-.2px">${d.avg.toFixed(2)}€</div>
+            </div>`,
+          iconSize: [52, 32],
+          iconAnchor: [26, 16],
         }),
         interactive: false,
       }).addTo(map);
     });
 
-    map.fitBounds(layer.getBounds(), { padding: [12, 12] });
+    map.fitBounds(layer.getBounds(), { padding: [2, 2], maxZoom: 13 });
   })
-  .catch(err => {
-    console.error('GeoJSON load failed:', err);
+  .catch(() => {
     document.getElementById('map').innerHTML =
-      '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#999;font-size:14px">Carte non disponible — ouvrir en ligne</div>';
+      '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#bbb;font-size:14px">Carte non disponible hors ligne</div>';
   });
-
-// ─── Sorted table ────────────────────────────────────────────────────────────
-(function buildTable() {
-  const sorted = Object.entries(prices).sort((a, b) => a[1].avg - b[1].avg);
-  const tbody = document.getElementById('tableBody');
-  sorted.forEach(([num, d], i) => {
-    const suffix = parseInt(num) <= 1 ? 'er' : 'e';
-    const color = getColor(d.avg);
-    const rank = i === 0 ? `<span class="rank-badge" style="background:#22c55e">Le moins cher</span>` :
-                 i === sorted.length - 1 ? `<span class="rank-badge" style="background:#ef4444">Le plus cher</span>` : '';
-    tbody.innerHTML += `
-      <tr>
-        <td><strong>${parseInt(num)}${suffix} arr.</strong> ${rank}</td>
-        <td class="price" style="color:${color}">${d.avg.toFixed(2)} €</td>
-        <td>${d.median.toFixed(2)} €</td>
-        <td style="color:#888">${d.bars}</td>
-        <td style="color:#aaa;font-size:12px">${d.min.toFixed(1)} – ${d.max.toFixed(1)} €</td>
-      </tr>`;
-  });
-})();
 </script>
 </body>
 </html>

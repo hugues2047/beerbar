@@ -249,7 +249,7 @@ export default function MapView() {
         type: 'geojson',
         data: geojson,
         cluster: true,
-        clusterMaxZoom: 12,   // bars individuels visibles dès zoom 13 (vue arrondissement)
+        clusterMaxZoom: 14,   // bars individuels visibles dès zoom 15 — clusters se forment plus tôt
         clusterRadius: 30,
         clusterProperties: {
           // prix le moins cher du cluster (999 = aucun prix connu)
