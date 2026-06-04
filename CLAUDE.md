@@ -57,6 +57,8 @@ git push
 | `scrape_mgb_happy_hours.mjs` | MisterGoodBeer (scraping) | `happy_hour_price`, `happy_hour_times` pour bars avec URL individuelle MGB | Une fois / quand nouveau scraping MGB |
 | `scrape_mgb_neighborhood.mjs` | MisterGoodBeer (slug inference) | Idem pour bars sans URL individuelle | Idem |
 | `enrich_bars_google.mjs` | Google Places API (payant) | `beer_price`, `opening_hours`, `has_terrace`, `google_place_id` | Quand budget dispo |
+| `scrape_fill_gaps_osm.mjs` | OSM Overpass (gratuit) | Insère les bars OSM absents de la DB (carte noire à blanc) | Mensuel |
+| `scrape_unpriced_mgb.mjs` | MisterGoodBeer (scraping) | Prix + HH pour bars avec `beer_price=0` via slug MGB | `node scrape_unpriced_mgb.mjs 500 0`, puis `500 500`, etc. |
 
 > **Note** : `scrape_mgb_neighborhood.mjs` doit être lancé 2 fois la première fois (grant source_url ajouté après le premier run).
 
@@ -68,7 +70,17 @@ id, name, address, latitude, longitude,
 beer_price, happy_hour_price, happy_hour_times, price_source, last_updated,
 has_terrace, terrace_grande,
 opening_hours, close_hour,
-happy_hour_periods, happy_hour_source, happy_hour_updated_at
+happy_hour_periods, happy_hour_source, happy_hour_updated_at,
+is_top_bar
 ```
+
+### Colonne `is_top_bar`
+
+Marqueur discret pour les bars incontournables. Critères algorithmiques :
+- `google_rating >= 4.5 AND beer_price > 0 AND opening_hours IS NOT NULL`
+- Ou manuellement via SQL pour les bars iconiques (Harry's Bar, Hemingway, Fine Mousse…)
+
+Actuel : **997 bars** marqués (13% de la base).
+Affiché dans l'UI : ⭐ inline dans le nom + ring amber sur le dot de la map + chip "⭐ Top".
 
 Si tu ajoutes une nouvelle colonne à afficher dans l'app → **mettre à jour ce SELECT**.
