@@ -306,7 +306,7 @@ export default function MapView() {
         paint: { 'text-color': '#ffffff' },
       });
 
-      // White halo behind individual dots
+      // Halo behind individual dots — amber for top bars, white for others
       map.current!.addLayer({
         id: 'bars-outline',
         type: 'circle',
@@ -314,8 +314,16 @@ export default function MapView() {
         filter: ['!', ['has', 'point_count']],
         paint: {
           'circle-radius': 8,
-          'circle-color': '#ffffff',
-          'circle-opacity': 0.9,
+          'circle-color': [
+            'case',
+            ['==', ['get', 'is_top_bar'], true], '#F59E0B', // amber ring for top bars
+            '#ffffff',
+          ] as unknown as string,
+          'circle-opacity': [
+            'case',
+            ['==', ['get', 'is_top_bar'], true], 0.7,
+            0.9,
+          ] as unknown as number,
           'circle-blur': 0,
         },
       });
@@ -385,6 +393,7 @@ export default function MapView() {
           happy_hour_source: p.happy_hour_source ?? null,
           happy_hour_updated_at: p.happy_hour_updated_at ?? null,
           close_hour: p.close_hour ?? null,
+          is_top_bar: p.is_top_bar ?? null,
         });
         setShowPriceForm(false);
         setPriceInput('');
@@ -881,7 +890,12 @@ export default function MapView() {
             {/* Name row */}
             <div className="flex items-start gap-2 mb-1">
               <div className="flex-1 min-w-0">
-                <h2 className="text-[20px] font-bold text-gray-900 leading-snug">{selectedBar.name}</h2>
+                <h2 className="text-[20px] font-bold text-gray-900 leading-snug">
+                  {selectedBar.name}
+                  {selectedBar.is_top_bar && (
+                    <span className="ml-1.5 text-[11px] font-semibold text-amber-500 align-middle">⭐</span>
+                  )}
+                </h2>
               </div>
               {/* Share */}
               <button
