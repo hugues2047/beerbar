@@ -38,4 +38,6 @@ export type Bar = {
   happy_hour_updated_at?: string | null;
   /** Max closing hour in 24+ notation (26 = 2 am, 29 = 5 am). null = unknown */
   close_hour: number | null;
+  /** Curated top bar — rating ≥ 4.5 + complete data, or manually flagged */
+  is_top_bar?: boolean | null;
 };

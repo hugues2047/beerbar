@@ -37,7 +37,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 console.log('🍺 Generating public/bars.json from Supabase…');
 
-const baseSelect = 'id,name,address,latitude,longitude,beer_price,happy_hour_price,happy_hour_times,price_source,last_updated,has_terrace,terrace_grande,opening_hours,close_hour';
+const baseSelect = 'id,name,address,latitude,longitude,beer_price,happy_hour_price,happy_hour_times,price_source,last_updated,has_terrace,terrace_grande,opening_hours,close_hour,is_top_bar';
 const selectWithHappyHourPeriods = `${baseSelect},happy_hour_periods,happy_hour_source,happy_hour_updated_at`;
 let selectColumns = selectWithHappyHourPeriods;
 const all = [];

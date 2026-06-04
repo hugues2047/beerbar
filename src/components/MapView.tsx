@@ -85,6 +85,7 @@ export default function MapView() {
   const [terraceFilter, setTerraceFilter] = useState(false);
   const [lateFilter, setLateFilter] = useState<LateFilter>('none');
   const [openNowFilter, setOpenNowFilter] = useState(false);
+  const [topBarFilter, setTopBarFilter] = useState(false);
   const [barsLoading, setBarsLoading] = useState(true);
 
   // Dynamic chrome height — drives sheet maxHeight so it never goes under the search bar
@@ -127,11 +128,13 @@ export default function MapView() {
       if (lateFilter === '5h' && (bar.close_hour === null || bar.close_hour < 29)) return false;
       // open now: only bars where we KNOW they're open (null = unknown → excluded)
       if (openNowFilter && isOpenNow(bar.opening_hours) !== true) return false;
+      // top bars only
+      if (topBarFilter && !bar.is_top_bar) return false;
       return true;
     });
-  }, [bars, searchQuery, priceFilter, terraceFilter, lateFilter, openNowFilter]);
+  }, [bars, searchQuery, priceFilter, terraceFilter, lateFilter, openNowFilter, topBarFilter]);
 
-  const isFiltered = priceFilter !== 'all' || !!searchQuery || terraceFilter || lateFilter !== 'none' || openNowFilter;
+  const isFiltered = priceFilter !== 'all' || !!searchQuery || terraceFilter || lateFilter !== 'none' || openNowFilter || topBarFilter;
 
   // Load all bars — static JSON servi par CDN Vercel (< 300 ms, 0 coût Supabase)
   // Re-généré à chaque déploiement via scripts/generate-bars.mjs (prebuild)
@@ -639,12 +642,13 @@ export default function MapView() {
             </div>
           )}
 
-          {/* Always-visible row: scrollable chips (left) + pinned legend (right) */}
-          {/* Legend is position:absolute so it's always visible even when chips overflow */}
+          {/* Scrollable chips row — fade hint on right edge */}
           <div className="relative">
+            {/* Right fade — indicates more chips without blocking them */}
+            <div className="absolute right-0 inset-y-0 w-6 pointer-events-none"
+              style={{ background: 'linear-gradient(to right, transparent, rgba(0,0,0,0.03))' }} />
 
-            {/* Scrollable chips — pr-[100px] keeps chips from scrolling under the legend */}
-            <div className="flex gap-1.5 items-center overflow-x-auto scrollbar-hide pr-[100px]">
+            <div className="flex gap-1.5 items-center overflow-x-auto scrollbar-hide pr-2">
 
               {/* 🔍 Search toggle */}
               <button
@@ -691,6 +695,18 @@ export default function MapView() {
                 ⛱️
               </button>
 
+              {/* Top bars chip */}
+              <button
+                onClick={() => setTopBarFilter(!topBarFilter)}
+                className={`flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95 ${
+                  topBarFilter ? 'bg-gray-900 text-white' : 'bg-white/90 text-gray-700 backdrop-blur-sm'
+                }`}
+                style={{ boxShadow: topBarFilter ? 'none' : '0 1px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)' }}
+                title="Bars incontournables (note ≥ 4.5)"
+              >
+                ⭐ Top
+              </button>
+
               {/* Open now chip */}
               <button
                 onClick={() => setOpenNowFilter(!openNowFilter)}
@@ -721,7 +737,7 @@ export default function MapView() {
               {/* Reset all filters — only when any filter is active */}
               {isFiltered && (
                 <button
-                  onClick={() => { setPriceFilter('all'); setTerraceFilter(false); setLateFilter('none'); setOpenNowFilter(false); setSearchQuery(''); setSearchOpen(false); }}
+                  onClick={() => { setPriceFilter('all'); setTerraceFilter(false); setLateFilter('none'); setOpenNowFilter(false); setTopBarFilter(false); setSearchQuery(''); setSearchOpen(false); }}
                   className="flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95 bg-gray-200 text-gray-600"
                 >
                   ✕ reset
@@ -729,23 +745,6 @@ export default function MapView() {
               )}
             </div>
 
-            {/* Color legend — pinned right, always visible, chips scroll under it */}
-            {/* The left shadow creates a soft fade effect behind scrolling chips */}
-            <div
-              className="absolute right-0 inset-y-0 flex items-center pl-6 pointer-events-none"
-              style={{ background: 'linear-gradient(to right, transparent 0%, rgba(0,0,0,0.0) 0%)' }}
-            >
-              <div
-                className="flex items-center gap-1 bg-white/95 backdrop-blur-md rounded-full px-2.5 py-1.5 flex-shrink-0 pointer-events-none"
-                style={{ boxShadow: '-12px 0 16px 8px rgba(255,255,255,0.6), 0 1px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)' }}
-              >
-                <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
-                <span className="text-[10px] font-semibold text-gray-500">5€</span>
-                <span className="w-2 h-2 rounded-full bg-orange-500 flex-shrink-0 ml-1" />
-                <span className="text-[10px] font-semibold text-gray-500">7€</span>
-                <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0 ml-1" />
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -878,7 +877,7 @@ export default function MapView() {
           </div>
 
           {/* ── Scrollable info zone — bottom padding accounts for floating CTA ── */}
-          <div className="px-5 pt-2 overflow-y-auto flex-1 min-h-0" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 100px)' }}>
+          <div className="px-5 pt-1.5 overflow-y-auto flex-1 min-h-0" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 90px)' }}>
             {/* Name row */}
             <div className="flex items-start gap-2 mb-1">
               <div className="flex-1 min-w-0">
@@ -908,54 +907,45 @@ export default function MapView() {
 
             {/* Address */}
             {selectedBar.address && (
-              <p className="text-[13px] text-gray-400 mb-2 leading-snug">{selectedBar.address}</p>
+              <p className="text-[12px] text-gray-400 mb-1.5 leading-snug">{selectedBar.address}</p>
             )}
 
-            {/* Opening hours */}
-            {selectedBar.opening_hours && (() => {
-              const todayStr = getTodayHours(selectedBar.opening_hours);
-              const open = isOpenNow(selectedBar.opening_hours);
-              return (
-                <div className="flex items-center gap-2 mb-2">
-                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${open ? 'bg-green-500' : open === false ? 'bg-red-400' : 'bg-gray-300'}`} />
-                  <span className="text-[12px] font-medium text-gray-500">
-                    {open === true ? 'Ouvert' : open === false ? 'Fermé' : ''}
-                    {todayStr && <span className="text-gray-400"> · {todayStr}</span>}
+            {/* Row: open status + HH — merged on one line to save vertical space */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-1.5">
+              {selectedBar.opening_hours && (() => {
+                const todayStr = getTodayHours(selectedBar.opening_hours);
+                const open = isOpenNow(selectedBar.opening_hours);
+                return (
+                  <span className="flex items-center gap-1.5">
+                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${open ? 'bg-green-500' : open === false ? 'bg-red-400' : 'bg-gray-300'}`} />
+                    <span className="text-[12px] font-medium text-gray-500">
+                      {open === true ? 'Ouvert' : open === false ? 'Fermé' : ''}
+                      {todayStr && <span className="text-gray-400"> · {todayStr}</span>}
+                    </span>
                   </span>
-                </div>
-              );
-            })()}
-
-            {/* Happy hour badge */}
-            {(selectedBar.happy_hour_times || (selectedBar.happy_hour_price != null && selectedBar.happy_hour_price > 0)) && (
-              <div className="flex items-center gap-2 mb-2">
-                <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full">
-                  🍻 Happy Hour
-                  {selectedBar.happy_hour_times && <span className="font-medium text-amber-600"> · {selectedBar.happy_hour_times}</span>}
+                );
+              })()}
+              {(selectedBar.happy_hour_times || (selectedBar.happy_hour_price != null && selectedBar.happy_hour_price > 0)) && (
+                <span className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
+                  🍻
+                  {selectedBar.happy_hour_times && <span>{selectedBar.happy_hour_times}</span>}
                   {selectedBar.happy_hour_price != null && selectedBar.happy_hour_price > 0 && (
-                    <span className="font-bold text-amber-800"> · {selectedBar.happy_hour_price.toFixed(2)}€</span>
+                    <span className="font-bold"> · {selectedBar.happy_hour_price.toFixed(2)}€</span>
                   )}
                 </span>
-              </div>
-            )}
-
-            {/* Terrace badge */}
-            {selectedBar.has_terrace === true && (
-              <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-green-700 bg-green-50 px-2.5 py-1 rounded-full mb-3">
-                ⛱️ {selectedBar.terrace_grande ? 'Grande terrasse' : 'Terrasse'}
-              </span>
-            )}
-            {selectedBar.has_terrace === false && (
-              <span className="inline-flex items-center gap-1 text-[12px] font-medium text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full mb-3">
-                Pas de terrasse
-              </span>
-            )}
+              )}
+              {selectedBar.has_terrace === true && (
+                <span className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
+                  ⛱️ {selectedBar.terrace_grande ? 'Grande terrasse' : 'Terrasse'}
+                </span>
+              )}
+            </div>
 
             {!showPriceForm ? (
               /* Price + date */
               <div className="flex items-end gap-2.5">
                 <span
-                  className="text-[44px] font-black leading-none tabular-nums"
+                  className="text-[40px] font-black leading-none tabular-nums"
                   style={{ color: selectedBar.beer_price === 0 ? '#d1d5db' : getPriceColor(selectedBar.beer_price) }}
                 >
                   {selectedBar.beer_price === 0 ? '—' : `${selectedBar.beer_price.toFixed(2)}€`}
